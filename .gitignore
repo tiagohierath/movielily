@@ -1,6 +1,7 @@
 /bin/
 *.test
 *.out
+*.mp4
 
 # OS / editor cruft
 .DS_Store
