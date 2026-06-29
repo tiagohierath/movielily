@@ -1,0 +1,13 @@
+/bin/
+*.test
+*.out
+
+# OS / editor cruft
+.DS_Store
+.direnv/
+
+# review scratch (also written inside user projects, harmless to ignore here)
+*.review.edl
+
+# nix build output
+/result
