@@ -116,6 +116,7 @@ the sequence doesn't exist yet, it's seeded from your selects.
 | `j` / `k` | move down / up |
 | `J` / `K` | reorder the scene down / up |
 | `g` / `G` | jump to top / bottom |
+| `Enter` | replay the scene's **whole source clip** in mpv to redo its IN/OUT (`i`/`o` to mark, `Enter` to confirm, `q` to cancel) |
 | `o` | add a **section** ("folder", e.g. *Scene 1*) and type its title |
 | `e` | edit the scene's note (add `#tags` here) |
 | `v` | open the sequence in **vim**, then reload on quit |

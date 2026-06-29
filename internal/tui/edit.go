@@ -13,6 +13,8 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"image"
+	_ "image/png" // register the PNG decoder for image.DecodeConfig
 	"io"
 	"math"
 	"os"
@@ -24,10 +26,12 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sys/unix"
 	xterm "golang.org/x/term"
 
 	"movielily/internal/ffmpeg"
 	"movielily/internal/model"
+	"movielily/internal/mpv"
 	"movielily/internal/project"
 	"movielily/internal/store"
 )
@@ -71,10 +75,11 @@ type editor struct {
 
 	// stdin reader coordination — lets us hand the terminal to an external
 	// editor (vim) without the reader goroutine stealing its keystrokes.
-	paused   int32 // atomic
-	parkedCh chan struct{}
-	resumeCh chan struct{}
-	wantVim  bool
+	paused       int32 // atomic
+	parkedCh     chan struct{}
+	resumeCh     chan struct{}
+	wantVim      bool
+	wantReselect bool
 
 	// layout (recomputed on resize)
 	leftW, rightW              int
@@ -218,6 +223,10 @@ func Edit(p *project.Project, name string) error {
 					return err
 				}
 			}
+			if e.wantReselect {
+				e.wantReselect = false
+				e.reselect(st)
+			}
 			if quit {
 				if e.dirty && !e.discard {
 					if err := e.save(); err != nil {
@@ -285,8 +294,10 @@ func (e *editor) handleInput(chunk []byte) (quit bool) {
 				e.moveUp()
 			case ' ':
 				e.toggleMark()
-			case 'e', '\r', '\n':
+			case 'e':
 				e.startEdit()
+			case '\r', '\n':
+				e.wantReselect = true
 			case 'o':
 				e.addSection()
 			case 'v':
@@ -556,22 +567,12 @@ func (e *editor) save() error {
 	return nil
 }
 
-// ---- external editor ------------------------------------------------------
+// ---- external programs (vim, mpv) -----------------------------------------
 
-// openInVim writes the sequence to disk, suspends the TUI, opens the plain-text
-// file in vim, and reloads it on return — so the same edit-decision list can be
-// edited either way and the two stay in lock-step. st is updated in place so
-// the deferred Restore in Edit still targets the original cooked state.
-func (e *editor) openInVim(st *xterm.State) error {
-	if err := e.save(); err != nil { // ensure vim sees the current state (and the file exists)
-		e.status = "save failed: " + err.Error()
-		e.drawAll()
-		e.out.Flush()
-		return nil
-	}
-
-	// Hand the terminal to vim: drop images, leave the alt screen, restore
-	// cooked mode, and park the reader so it doesn't eat vim's keystrokes.
+// suspend hands the terminal to an external program: it drops any images,
+// leaves the alt screen, restores cooked mode, and parks the stdin reader so
+// the child gets the keyboard cleanly.
+func (e *editor) suspend(st *xterm.State) {
 	if e.kitty {
 		kittyDeleteAll(e.out)
 	}
@@ -583,14 +584,14 @@ func (e *editor) openInVim(st *xterm.State) error {
 	case <-e.parkedCh:
 	case <-time.After(500 * time.Millisecond):
 	}
-	_ = os.Stdin.SetReadDeadline(time.Time{}) // clear deadline while vim runs
+	_ = os.Stdin.SetReadDeadline(time.Time{}) // clear deadline while the child runs
+}
 
-	argv := append(vimCommand(), e.path)
-	cmd := exec.Command(argv[0], argv[1:]...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	runErr := cmd.Run()
-
-	// Take the terminal back.
+// resume takes the terminal back after an external program exits: raw mode,
+// alt screen, reader un-parked, and the layout recomputed in case of a resize.
+// The caller is responsible for redrawing. st is updated in place so the
+// deferred Restore in Edit still targets the original cooked state.
+func (e *editor) resume(st *xterm.State) {
 	if ns, err := xterm.MakeRaw(int(os.Stdin.Fd())); err == nil {
 		*st = *ns
 	}
@@ -600,6 +601,30 @@ func (e *editor) openInVim(st *xterm.State) error {
 	default:
 	}
 	io.WriteString(e.out, altScreenOn+hideCursor)
+	e.w, e.h, _ = xterm.GetSize(int(os.Stdout.Fd()))
+	if e.w < 40 || e.h < 10 {
+		e.w, e.h = max(e.w, 80), max(e.h, 24)
+	}
+	e.computeLayout()
+}
+
+// openInVim writes the sequence to disk, opens the plain-text file in vim, and
+// reloads it on return — so the same edit-decision list can be edited either
+// way and the two stay in lock-step.
+func (e *editor) openInVim(st *xterm.State) error {
+	if err := e.save(); err != nil { // ensure vim sees the current state (and the file exists)
+		e.status = "save failed: " + err.Error()
+		e.drawAll()
+		e.out.Flush()
+		return nil
+	}
+
+	e.suspend(st)
+	argv := append(vimCommand(), e.path)
+	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	runErr := cmd.Run()
+	e.resume(st)
 
 	// Pick up whatever vim left behind.
 	if items, err := store.LoadSequence(e.path); err != nil {
@@ -617,15 +642,52 @@ func (e *editor) openInVim(st *xterm.State) error {
 		}
 	}
 
-	e.w, e.h, _ = xterm.GetSize(int(os.Stdout.Fd()))
-	if e.w < 40 || e.h < 10 {
-		e.w, e.h = max(e.w, 80), max(e.h, 24)
-	}
-	e.computeLayout()
 	e.redraw(true)
 	e.onSceneChange()
 	e.out.Flush()
 	return nil
+}
+
+// reselect plays the current scene's full source clip in mpv so its in/out can
+// be redone (Enter in the list). Sections and stills have no trim to redo.
+func (e *editor) reselect(st *xterm.State) {
+	if len(e.items) == 0 {
+		return
+	}
+	it := e.items[e.cursor]
+	switch {
+	case it.IsSection():
+		e.status = "sections have no footage to play"
+		e.drawAll()
+		e.out.Flush()
+		return
+	case it.Kind == model.KindImage:
+		e.status = "stills have no in/out — use e to set the duration"
+		e.drawAll()
+		e.out.Flush()
+		return
+	}
+
+	e.suspend(st)
+	in, out, ok, err := mpv.Reselect(e.p, it.File, it.In, it.Out)
+	e.resume(st)
+
+	switch {
+	case err != nil:
+		e.status = "mpv: " + err.Error()
+	case ok:
+		e.pushUndo()
+		e.items[e.cursor].In = in
+		e.items[e.cursor].Out = out
+		e.dirty = true
+		e.status = fmt.Sprintf("in/out → %s–%s — w to save", mmss(in), mmss(out))
+	default:
+		e.status = "in/out unchanged"
+	}
+
+	e.redraw(true)
+	e.onSceneChange()
+	e.out.Flush()
 }
 
 // vimCommand is the editor to launch. It honours $MOVIELILY_EDITOR for an
@@ -807,7 +869,7 @@ func (e *editor) drawFooter() {
 	case e.status != "":
 		s = " " + e.status
 	default:
-		s = " j/k move · J/K reorder · o section · v vim · space mark · e note · d del · u undo · w save · q quit"
+		s = " j/k move · J/K reorder · ⏎ redo in/out · e note · o section · v vim · space mark · d del · u undo · w save · q quit"
 	}
 	io.WriteString(e.out, moveTo(e.h, 1)+"\x1b[7m"+padRight(trunc(s, e.w), e.w)+"\x1b[0m")
 }
@@ -931,13 +993,89 @@ func (e *editor) drawImages() {
 	}
 	if e.curFirst != "" {
 		clear(e.firstImgRow)
-		kittyPlace(e.out, e.curFirst, e.firstImgRow, e.imgCol, e.imgCols, e.imgRows)
+		e.placeImage(e.curFirst, e.firstImgRow)
 	}
 	if e.curLast != "" {
 		clear(e.lastImgRow)
-		kittyPlace(e.out, e.curLast, e.lastImgRow, e.imgCol, e.imgCols, e.imgRows)
+		e.placeImage(e.curLast, e.lastImgRow)
 	}
 	io.WriteString(e.out, moveTo(e.h, e.w)) // park cursor
+}
+
+// placeImage draws the PNG at path inside the imgCols×imgRows box whose top is
+// `top`, preserving the image's aspect ratio (no stretching) and centering it
+// within the box.
+func (e *editor) placeImage(path string, top int) {
+	cols, rows := e.fitCells(path)
+	colOff := (e.imgCols - cols) / 2
+	rowOff := (e.imgRows - rows) / 2
+	if colOff < 0 {
+		colOff = 0
+	}
+	if rowOff < 0 {
+		rowOff = 0
+	}
+	kittyPlace(e.out, path, top+rowOff, e.imgCol+colOff, cols, rows)
+}
+
+// fitCells returns the largest cols×rows cell box (within imgCols×imgRows) that
+// matches the image's pixel aspect ratio, so kitty's scale-to-fill does not
+// distort it. It accounts for the terminal's non-square cells.
+func (e *editor) fitCells(path string) (cols, rows int) {
+	maxC, maxR := e.imgCols, e.imgRows
+	iw, ih := imageSize(path)
+	if iw <= 0 || ih <= 0 {
+		return maxC, maxR
+	}
+	cw, ch := cellPixels() // pixels per cell (width, height)
+	// A cols×rows box has pixel aspect (cols*cw)/(rows*ch); set it equal to the
+	// image's iw/ih and solve for the cols:rows ratio.
+	ratio := (float64(iw) / float64(ih)) * (ch / cw)
+	cols = maxC
+	rows = int(math.Round(float64(cols) / ratio))
+	if rows > maxR {
+		rows = maxR
+		cols = int(math.Round(float64(rows) * ratio))
+	}
+	if cols < 1 {
+		cols = 1
+	}
+	if rows < 1 {
+		rows = 1
+	}
+	if cols > maxC {
+		cols = maxC
+	}
+	if rows > maxR {
+		rows = maxR
+	}
+	return cols, rows
+}
+
+// imageSize reads a PNG's pixel dimensions from its header (cheap; no full
+// decode). Returns 0,0 if it can't be read.
+func imageSize(path string) (int, int) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, 0
+	}
+	defer f.Close()
+	cfg, _, err := image.DecodeConfig(f)
+	if err != nil {
+		return 0, 0
+	}
+	return cfg.Width, cfg.Height
+}
+
+// cellPixels returns the terminal's pixel size of one character cell. It asks
+// the TTY (TIOCGWINSZ); when that reports nothing (some terminals), it falls
+// back to a typical cell that is roughly twice as tall as it is wide.
+func cellPixels() (w, h float64) {
+	if ws, err := unix.IoctlGetWinsize(int(os.Stdout.Fd()), unix.TIOCGWINSZ); err == nil &&
+		ws.Xpixel > 0 && ws.Ypixel > 0 && ws.Col > 0 && ws.Row > 0 {
+		return float64(ws.Xpixel) / float64(ws.Col), float64(ws.Ypixel) / float64(ws.Row)
+	}
+	return 1, 2
 }
 
 func (e *editor) put(row, col int, s string) {

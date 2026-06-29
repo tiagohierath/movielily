@@ -67,7 +67,7 @@ Tags are just `#hashtags` inside any note — `movielily tag` lists them,
 | `search <term>` | search markers, selects and notes |
 | `tag [name]` | list tags, or show everything tagged `#name` |
 | `seq video/image/show/list/from-selects` | assemble sequences |
-| `edit [seq]` | interactive TUI: `j`/`k` move, `J`/`K` reorder, `o` section, `e` note, `v` open in vim, `space` mark, `d` del, `u` undo, `w` save, `q` quit; first/last frame preview in kitty-style terminals |
+| `edit [seq]` | interactive TUI: `j`/`k` move, `J`/`K` reorder, `⏎` replay clip in mpv to redo in/out, `e` note, `o` section, `v` open in vim, `space` mark, `d` del, `u` undo, `w` save, `q` quit; first/last frame preview in kitty-style terminals |
 | `review <seq>` | watch a sequence instantly via mpv EDL (no render) |
 | `export <seq> <out.mp4>` | render with ffmpeg |
 
