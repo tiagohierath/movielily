@@ -119,6 +119,7 @@ the sequence doesn't exist yet, it's seeded from your selects.
 | `Enter` | replay the scene's **whole source clip** in mpv to redo its IN/OUT (`i`/`o` to mark, `Enter` to confirm, `q` to cancel) |
 | `o` | add a **section** ("folder", e.g. *Scene 1*) and type its title |
 | `e` | edit the scene's note (add `#tags` here) |
+| `t` | set a still image's on-screen duration (seconds) |
 | `v` | open the sequence in **vim**, then reload on quit |
 | `space` | mark a scene (mark several, then `d` to delete them all) |
 | `d` | delete the marked scenes, or the one under the cursor |

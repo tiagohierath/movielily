@@ -21,6 +21,8 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -66,7 +68,8 @@ type editor struct {
 	dirty  bool
 
 	mode       int
-	inputBytes []byte // note being edited
+	inputBytes []byte // text being edited (note, title, or duration)
+	editDur    bool   // the inline edit targets a still's duration, not its note
 	status     string
 
 	w, h  int
@@ -296,6 +299,8 @@ func (e *editor) handleInput(chunk []byte) (quit bool) {
 				e.toggleMark()
 			case 'e':
 				e.startEdit()
+			case 't':
+				e.startDurEdit()
 			case '\r', '\n':
 				e.wantReselect = true
 			case 'o':
@@ -333,6 +338,7 @@ func (e *editor) handleEdit(chunk []byte) {
 		switch {
 		case b == 0x1b:
 			e.mode = modeNormal
+			e.editDur = false
 			e.status = "edit cancelled"
 			e.drawAll()
 			e.onSceneChange()
@@ -401,6 +407,7 @@ func (e *editor) moveDown() {
 	}
 	e.pushUndo()
 	e.items[e.cursor], e.items[e.cursor+1] = e.items[e.cursor+1], e.items[e.cursor]
+	e.marked[e.cursor], e.marked[e.cursor+1] = e.marked[e.cursor+1], e.marked[e.cursor]
 	e.cursor++
 	e.dirty = true
 	e.forceScene = true
@@ -413,6 +420,7 @@ func (e *editor) moveUp() {
 	}
 	e.pushUndo()
 	e.items[e.cursor], e.items[e.cursor-1] = e.items[e.cursor-1], e.items[e.cursor]
+	e.marked[e.cursor], e.marked[e.cursor-1] = e.marked[e.cursor-1], e.marked[e.cursor]
 	e.cursor--
 	e.dirty = true
 	e.forceScene = true
@@ -472,7 +480,26 @@ func (e *editor) startEdit() {
 		return
 	}
 	e.mode = modeEdit
+	e.editDur = false
 	e.inputBytes = []byte(e.items[e.cursor].Note)
+}
+
+// startDurEdit edits a still image's on-screen duration. Clips set their length
+// via their in/out (⏎ → mpv), and sections have none — so this is image-only.
+func (e *editor) startDurEdit() {
+	if len(e.items) == 0 {
+		return
+	}
+	switch e.items[e.cursor].Kind {
+	case model.KindImage:
+		e.mode = modeEdit
+		e.editDur = true
+		e.inputBytes = []byte(trimf(e.items[e.cursor].Dur))
+	case model.KindSection:
+		e.status = "sections have no duration"
+	default:
+		e.status = "use ⏎ to set a clip's in/out"
+	}
 }
 
 // addSection inserts a new "folder" header just below the cursor (or at the top
@@ -500,6 +527,10 @@ func (e *editor) addSection() {
 }
 
 func (e *editor) commitEdit() {
+	if e.editDur {
+		e.commitDur()
+		return
+	}
 	e.pushUndo()
 	isSection := e.items[e.cursor].IsSection()
 	e.items[e.cursor].Note = strings.TrimSpace(string(e.inputBytes))
@@ -511,6 +542,24 @@ func (e *editor) commitEdit() {
 	} else {
 		e.status = "note updated — w to save"
 	}
+}
+
+// commitDur parses the inline input as a duration and applies it to the still.
+// A bad value is rejected with a message rather than silently zeroing it.
+func (e *editor) commitDur() {
+	secs, err := model.ParseSeconds(string(e.inputBytes))
+	e.mode = modeNormal
+	e.editDur = false
+	e.inputBytes = nil
+	if err != nil || secs <= 0 {
+		e.status = "duration unchanged (want a positive number of seconds)"
+		return
+	}
+	e.pushUndo()
+	e.items[e.cursor].Dur = secs
+	e.dirty = true
+	e.forceScene = true
+	e.status = fmt.Sprintf("duration → %ss — w to save", trimf(secs))
 }
 
 // sectionStats counts the playable scenes that fall under the section at idx
@@ -662,7 +711,7 @@ func (e *editor) reselect(st *xterm.State) {
 		e.out.Flush()
 		return
 	case it.Kind == model.KindImage:
-		e.status = "stills have no in/out — use e to set the duration"
+		e.status = "stills have no in/out — press t to set the duration"
 		e.drawAll()
 		e.out.Flush()
 		return
@@ -862,16 +911,76 @@ func (e *editor) drawFooter() {
 	switch {
 	case e.mode == modeEdit:
 		label := "note"
-		if len(e.items) > 0 && e.items[e.cursor].IsSection() {
+		switch {
+		case e.editDur:
+			label = "duration (s)"
+		case len(e.items) > 0 && e.items[e.cursor].IsSection():
 			label = "title"
 		}
 		s = " " + label + " ▸ " + string(e.inputBytes) + "▏"
 	case e.status != "":
 		s = " " + e.status
 	default:
-		s = " j/k move · J/K reorder · ⏎ redo in/out · e note · o section · v vim · space mark · d del · u undo · w save · q quit"
+		s = " j/k move · J/K reorder · ⏎ redo in/out · e note · t still-dur · o section · v vim · space mark · d del · u undo · w save · q quit"
 	}
 	io.WriteString(e.out, moveTo(e.h, 1)+"\x1b[7m"+padRight(trunc(s, e.w), e.w)+"\x1b[0m")
+}
+
+// span is one styled run of a list row. The text is always plain (no escapes)
+// so its visible width is just its rune count; style holds SGR params ("" for
+// the terminal default). Rows are built as spans so the cursor highlight, the
+// fixed-column alignment, and width-correct truncation are all exact.
+type span struct {
+	text  string
+	style string
+}
+
+// listMetrics are the per-frame measurements that shape every row: how scenes
+// are numbered, how wide each column is, and whether the optional pacing bar
+// fits. Computed once per draw so all rows stay on one grid.
+type listMetrics struct {
+	hasSections bool
+	sceneNo     []int // item index -> 1-based scene number (0 for sections)
+	numW        int
+	fileW       int
+	indent      int
+	maxDur      float64
+	showBar     bool
+	barW        int
+}
+
+func (e *editor) metrics() listMetrics {
+	m := listMetrics{sceneNo: make([]int, len(e.items)), barW: 6}
+	n, maxNo := 0, 0
+	for i, it := range e.items {
+		if it.IsSection() {
+			m.hasSections = true
+			continue
+		}
+		n++
+		m.sceneNo[i], maxNo = n, n
+		if d := it.Duration(); d > m.maxDur {
+			m.maxDur = d
+		}
+	}
+	if m.numW = len(strconv.Itoa(maxNo)); m.numW < 2 {
+		m.numW = 2
+	}
+	if m.hasSections {
+		m.indent = 2
+	}
+	switch {
+	case e.leftW >= 54:
+		m.fileW = 16
+	case e.leftW >= 40:
+		m.fileW = 12
+	default:
+		m.fileW = 9
+	}
+	// Columns up to and including the duration; the bar+note share what's left.
+	fixed := m.indent + 2 + m.numW + 1 + m.fileW + 2 + 5 + 1
+	m.showBar = m.maxDur > 0 && e.leftW-fixed >= m.barW+2
+	return m
 }
 
 func (e *editor) drawList() {
@@ -885,49 +994,171 @@ func (e *editor) drawList() {
 	if e.top < 0 {
 		e.top = 0
 	}
+	m := e.metrics()
 	for i := 0; i < visible; i++ {
 		row := e.listTop + i
 		idx := e.top + i
 		var line string
 		switch {
 		case idx < len(e.items):
-			line = e.renderItem(idx)
+			var spans []span
+			if e.items[idx].IsSection() {
+				spans = e.sectionSpans(idx, m)
+			} else {
+				spans = e.sceneSpans(idx, m)
+			}
+			line = renderRow(spans, e.leftW, idx == e.cursor)
 		case idx == 0 && len(e.items) == 0:
-			line = "  (empty sequence — press q to quit)"
-		}
-		content := padRight(line, e.leftW)
-		isSection := idx < len(e.items) && e.items[idx].IsSection()
-		io.WriteString(e.out, moveTo(row, 1))
-		switch {
-		case idx == e.cursor && len(e.items) > 0:
-			io.WriteString(e.out, "\x1b[7m"+content+"\x1b[0m")
-		case isSection:
-			io.WriteString(e.out, "\x1b[1;36m"+content+"\x1b[0m")
+			hint := "  (empty sequence — press o to add a section · v for vim · q to quit)"
+			line = "\x1b[2m" + visPad(hint, e.leftW) + "\x1b[0m"
 		default:
-			io.WriteString(e.out, content)
+			line = strings.Repeat(" ", e.leftW)
 		}
-		io.WriteString(e.out, "\x1b[90m│\x1b[0m")
+		io.WriteString(e.out, moveTo(row, 1)+line+e.dividerCell(i, visible))
 	}
 }
 
-func (e *editor) renderItem(idx int) string {
-	it := e.items[idx]
-	if it.IsSection() {
-		title := strings.TrimSpace(it.Note)
-		if title == "" {
-			title = "untitled section"
+// renderRow lays spans into a field of exactly w cells. The cursor row is drawn
+// reverse-video with per-span colours dropped (a reset would cancel the
+// inverse); every other row keeps its colours and is space-padded to width.
+func renderRow(spans []span, w int, cursor bool) string {
+	if cursor {
+		var plain strings.Builder
+		for _, s := range spans {
+			plain.WriteString(s.text)
 		}
-		return "▌ " + strings.ToUpper(title)
+		return "\x1b[7m" + visPad(plain.String(), w) + "\x1b[0m"
 	}
-	mark := " "
+	var b strings.Builder
+	width := 0
+	for _, s := range spans {
+		if width >= w {
+			break
+		}
+		t := s.text
+		if width+len([]rune(t)) > w {
+			t = trunc(t, w-width)
+		}
+		width += len([]rune(t))
+		if s.style != "" {
+			b.WriteString("\x1b[" + s.style + "m" + t + "\x1b[0m")
+		} else {
+			b.WriteString(t)
+		}
+	}
+	if width < w {
+		b.WriteString(strings.Repeat(" ", w-width))
+	}
+	return b.String()
+}
+
+func (e *editor) sceneSpans(idx int, m listMetrics) []span {
+	it := e.items[idx]
+	sp := make([]span, 0, 8)
+	if m.indent > 0 {
+		sp = append(sp, span{text: strings.Repeat(" ", m.indent)})
+	}
 	if e.marked[idx] {
-		mark = "◉"
+		sp = append(sp, span{text: "▌ ", style: "1;33"})
+	} else {
+		icon := "▶ "
+		if it.Kind == model.KindImage {
+			icon = "▦ "
+		}
+		sp = append(sp, span{text: icon, style: "2"})
 	}
-	num := fmt.Sprintf("%2d", idx+1)
-	if it.Kind == model.KindImage {
-		return fmt.Sprintf("%s %s %s  img %ss  %s", mark, num, padRight(it.File, 16), trimf(it.Dur), it.Note)
+	sp = append(sp, span{text: padLeft(strconv.Itoa(m.sceneNo[idx]), m.numW) + " ", style: "2"})
+	sp = append(sp, span{text: padRight(it.File, m.fileW) + "  "})
+	sp = append(sp, span{text: padLeft(durLabel(it), 5) + " ", style: "2"})
+	if m.showBar {
+		filled := barFill(it.Duration(), m.maxDur, m.barW)
+		sp = append(sp, span{text: strings.Repeat("▰", filled), style: "36"})
+		sp = append(sp, span{text: strings.Repeat("▱", m.barW-filled) + " ", style: "2"})
 	}
-	return fmt.Sprintf("%s %s %s  %s–%s  %s", mark, num, padRight(it.File, 16), mmss(it.In), mmss(it.Out), it.Note)
+	return appendNoteSpans(sp, it.Note)
+}
+
+func (e *editor) sectionSpans(idx int, m listMetrics) []span {
+	title := strings.TrimSpace(e.items[idx].Note)
+	if title == "" {
+		title = "untitled section"
+	}
+	n, dur := e.sectionStats(idx)
+	head := "▌ " + strings.ToUpper(title)
+	stats := fmt.Sprintf("%d · %s", n, mmss(dur))
+	sp := []span{{text: head, style: "1;36"}}
+	if leaderW := e.leftW - len([]rune(head)) - len([]rune(stats)) - 2; leaderW >= 1 {
+		sp = append(sp, span{text: " " + strings.Repeat("·", leaderW) + " ", style: "2"})
+		sp = append(sp, span{text: stats, style: "36"})
+	}
+	return sp
+}
+
+func durLabel(it model.SequenceItem) string {
+	return mmss(it.Duration())
+}
+
+// barFill is how many of w cells a clip of length d fills relative to the
+// longest clip — a clip with any length never rounds away to nothing.
+func barFill(d, max float64, w int) int {
+	if max <= 0 {
+		return 0
+	}
+	n := int(math.Round(d / max * float64(w)))
+	if n < 1 && d > 0 {
+		n = 1
+	}
+	if n > w {
+		n = w
+	}
+	return n
+}
+
+// tagInline matches an inline #hashtag (mirrors model's tag grammar) so the
+// list can highlight tags where they sit inside a note.
+var tagInline = regexp.MustCompile(`#[\p{L}\p{N}_\-]+`)
+
+// appendNoteSpans appends the note as the row's trailing free text, splitting
+// out #tags so they can be coloured in place.
+func appendNoteSpans(dst []span, note string) []span {
+	note = strings.TrimSpace(note)
+	if note == "" {
+		return dst
+	}
+	locs := tagInline.FindAllStringIndex(note, -1)
+	pos := 0
+	for _, loc := range locs {
+		if loc[0] > pos {
+			dst = append(dst, span{text: note[pos:loc[0]]})
+		}
+		dst = append(dst, span{text: note[loc[0]:loc[1]], style: "33"})
+		pos = loc[1]
+	}
+	if pos < len(note) {
+		dst = append(dst, span{text: note[pos:]})
+	}
+	return dst
+}
+
+// dividerCell draws the column rule between the list and the preview, doubling
+// as a scrollbar: a brighter thumb marks where the viewport sits when the list
+// is taller than the screen.
+func (e *editor) dividerCell(i, visible int) string {
+	ch, style := "│", "90"
+	if n := len(e.items); n > visible && visible > 0 {
+		thumb := visible * visible / n
+		if thumb < 1 {
+			thumb = 1
+		}
+		pos := e.top * visible / n
+		if pos+thumb > visible {
+			pos = visible - thumb
+		}
+		if i >= pos && i < pos+thumb {
+			ch, style = "┃", "1;36"
+		}
+	}
+	return "\x1b[" + style + "m" + ch + "\x1b[0m"
 }
 
 func (e *editor) drawRight() {
@@ -1082,10 +1313,9 @@ func (e *editor) put(row, col int, s string) {
 	if row < 1 || row > e.h || col < 1 || col > e.w {
 		return
 	}
-	if !strings.Contains(s, "\x1b") {
-		s = trunc(s, e.w-col+1)
-	}
-	io.WriteString(e.out, moveTo(row, col)+s)
+	// Truncate by *visible* width even when s carries SGR escapes — otherwise an
+	// over-long right-pane label wraps onto, and corrupts, the left pane.
+	io.WriteString(e.out, moveTo(row, col)+visTrunc(s, e.w-col+1))
 }
 
 // ---- terminal + kitty helpers ---------------------------------------------
@@ -1149,6 +1379,87 @@ func padRight(s string, w int) string {
 		return trunc(s, w)
 	}
 	return s + strings.Repeat(" ", w-len(r))
+}
+
+func padLeft(s string, w int) string {
+	if r := []rune(s); len(r) < w {
+		return strings.Repeat(" ", w-len(r)) + s
+	}
+	return s
+}
+
+// isSGRFinal reports whether r ends an ANSI escape sequence we care about (an
+// SGR sequence ends in a letter, e.g. the 'm' of "\x1b[1;36m").
+func isSGRFinal(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
+}
+
+// visWidth is s's width in terminal cells, ignoring ANSI SGR escapes. Every
+// visible rune counts as one cell, matching this file's single-width assumption.
+func visWidth(s string) int {
+	n, inEsc := 0, false
+	for _, r := range s {
+		switch {
+		case inEsc:
+			if isSGRFinal(r) {
+				inEsc = false
+			}
+		case r == 0x1b:
+			inEsc = true
+		default:
+			n++
+		}
+	}
+	return n
+}
+
+// visTrunc truncates s to at most w visible cells — ANSI SGR escapes pass
+// through without counting — appending an ellipsis when anything is cut. A
+// reset is appended whenever s carried an escape, so styling never leaks past.
+func visTrunc(s string, w int) string {
+	if w <= 0 {
+		return ""
+	}
+	if visWidth(s) <= w {
+		return s
+	}
+	var b strings.Builder
+	hadEsc, inEsc, count := false, false, 0
+	for _, r := range s {
+		switch {
+		case inEsc:
+			b.WriteRune(r)
+			if isSGRFinal(r) {
+				inEsc = false
+			}
+		case r == 0x1b:
+			inEsc, hadEsc = true, true
+			b.WriteRune(r)
+		case count == w-1:
+			b.WriteRune('…')
+			count++
+		default:
+			b.WriteRune(r)
+			count++
+		}
+		if count >= w {
+			break
+		}
+	}
+	if hadEsc {
+		b.WriteString("\x1b[0m")
+	}
+	return b.String()
+}
+
+// visPad right-pads s with spaces to exactly w visible cells (truncating when
+// longer), so styled segments line up on a fixed grid.
+func visPad(s string, w int) string {
+	n := visWidth(s)
+	if n >= w {
+		return visTrunc(s, w)
+	}
+	return s + strings.Repeat(" ", w-n)
 }
 
 func mmss(t float64) string {
