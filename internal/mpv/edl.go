@@ -22,6 +22,9 @@ func BuildEDL(p *project.Project, name string, items []model.SequenceItem) (path
 	var b strings.Builder
 	b.WriteString("# mpv EDL v0\n")
 	for _, it := range items {
+		if it.IsSection() {
+			continue
+		}
 		if it.Kind != model.KindVideo {
 			skippedImages++
 			continue

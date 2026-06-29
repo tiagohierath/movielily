@@ -21,6 +21,15 @@ import (
 // The invariant: source footage + instructions = export. Footage is only ever
 // read, so Export refuses to write its output over any source file.
 func Export(p *project.Project, items []model.SequenceItem, out string) error {
+	// Section headers are organisational only; they contribute no footage and
+	// must not enter the index-coupled concat graph below.
+	playable := items[:0:0]
+	for _, it := range items {
+		if !it.IsSection() {
+			playable = append(playable, it)
+		}
+	}
+	items = playable
 	if len(items) == 0 {
 		return fmt.Errorf("nothing to export: sequence is empty")
 	}

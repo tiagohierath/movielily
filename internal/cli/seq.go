@@ -86,9 +86,12 @@ func newSeqShowCmd() *cobra.Command {
 			}
 			var total float64
 			for i, it := range items {
-				if it.Kind == model.KindImage {
+				switch it.Kind {
+				case model.KindSection:
+					fmt.Printf("--- %s\n", it.Note)
+				case model.KindImage:
 					fmt.Printf("%2d. image  %-20s %ss  %s\n", i+1, it.File, model.FormatSeconds(it.Dur), it.Note)
-				} else {
+				default:
 					fmt.Printf("%2d. video  %-20s %s–%s (%ss)  %s\n", i+1, it.File, model.FormatSeconds(it.In), model.FormatSeconds(it.Out), model.FormatSeconds(round1(it.Duration())), it.Note)
 				}
 				total += it.Duration()

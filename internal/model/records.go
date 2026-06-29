@@ -117,34 +117,49 @@ func ParseNote(line string) (Note, error) {
 type ItemKind string
 
 const (
-	KindVideo ItemKind = "video"
-	KindImage ItemKind = "image"
+	KindVideo   ItemKind = "video"
+	KindImage   ItemKind = "image"
+	KindSection ItemKind = "section"
 )
 
-// SequenceItem is one entry in a sequence: a trimmed video clip or a still
-// image shown for a duration.
+// SequenceItem is one entry in a sequence: a trimmed video clip, a still image
+// shown for a duration, or a section header that groups the items beneath it
+// (a "folder" — e.g. "Scene 1"). A section contributes nothing to the rendered
+// movie; it is purely organisational.
 //
 //	video|file|in|out|note      e.g. video|clip001.mp4|72.3|85.1|great reaction
 //	image|file|duration|note    e.g. image|photo001.jpg|5|opening image
+//	section|title               e.g. section|Scene 1 — the arrival
 type SequenceItem struct {
 	Kind ItemKind
 	File string
 	In   float64 // video only
 	Out  float64 // video only
 	Dur  float64 // image only
-	Note string
+	Note string  // free text; the title for a section
 }
 
-// Duration is how long the item occupies the finished sequence.
+// IsSection reports whether the item is a section header rather than playable
+// footage.
+func (it SequenceItem) IsSection() bool { return it.Kind == KindSection }
+
+// Duration is how long the item occupies the finished sequence. Sections
+// occupy no time.
 func (it SequenceItem) Duration() float64 {
-	if it.Kind == KindImage {
+	switch it.Kind {
+	case KindSection:
+		return 0
+	case KindImage:
 		return it.Dur
 	}
 	return it.Out - it.In
 }
 
 func (it SequenceItem) String() string {
-	if it.Kind == KindImage {
+	switch it.Kind {
+	case KindSection:
+		return "section|" + text(it.Note)
+	case KindImage:
 		return "image|" + field(it.File) + "|" + FormatSeconds(it.Dur) + "|" + text(it.Note)
 	}
 	return "video|" + field(it.File) + "|" + FormatSeconds(it.In) + "|" + FormatSeconds(it.Out) + "|" + text(it.Note)
@@ -188,7 +203,14 @@ func ParseItem(line string) (SequenceItem, error) {
 			it.Note = strings.TrimSpace(p[3])
 		}
 		return it, nil
+	case KindSection:
+		p := strings.SplitN(line, "|", 2)
+		it := SequenceItem{Kind: KindSection}
+		if len(p) == 2 {
+			it.Note = strings.TrimSpace(p[1])
+		}
+		return it, nil
 	default:
-		return SequenceItem{}, fmt.Errorf("unknown item kind in %q (want video|… or image|…)", line)
+		return SequenceItem{}, fmt.Errorf("unknown item kind in %q (want video|…, image|… or section|…)", line)
 	}
 }

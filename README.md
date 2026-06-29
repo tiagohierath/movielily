@@ -45,8 +45,14 @@ footage/           # your .mp4 / .jpg / .png  (read-only, never touched)
 markers.txt        # file|seconds|note
 selects.txt        # file|in|out|note
 notes.txt          # file|time|text
-sequences/         # video|file|in|out|note   and   image|file|duration|note
+sequences/         # video|file|in|out|note · image|file|duration|note · section|title
 ```
+
+A sequence is just one record per line, so you can edit it with `movielily
+edit` (the TUI) or in vim — the TUI's `v` key opens the very same file and
+reloads it when you quit vim, so the two stay in lock-step. `section|…` lines
+are organisational "folders" (e.g. `Scene 1`) and contribute nothing to the
+export.
 
 Tags are just `#hashtags` inside any note — `movielily tag` lists them,
 `movielily tag funny` shows everything tagged `#funny`.
@@ -61,6 +67,7 @@ Tags are just `#hashtags` inside any note — `movielily tag` lists them,
 | `search <term>` | search markers, selects and notes |
 | `tag [name]` | list tags, or show everything tagged `#name` |
 | `seq video/image/show/list/from-selects` | assemble sequences |
+| `edit [seq]` | interactive TUI: `j`/`k` move, `J`/`K` reorder, `o` section, `e` note, `v` open in vim, `space` mark, `d` del, `u` undo, `w` save, `q` quit; first/last frame preview in kitty-style terminals |
 | `review <seq>` | watch a sequence instantly via mpv EDL (no render) |
 | `export <seq> <out.mp4>` | render with ffmpeg |
 

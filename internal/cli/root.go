@@ -27,6 +27,7 @@ func newRootCmd() *cobra.Command {
 		newSearchCmd(),
 		newTagCmd(),
 		newSeqCmd(),
+		newEditCmd(),
 		newReviewCmd(),
 		newExportCmd(),
 		newVersionCmd(),

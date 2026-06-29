@@ -61,6 +61,7 @@ func TestItemRoundTrip(t *testing.T) {
 	for _, it := range []SequenceItem{
 		{Kind: KindVideo, File: "clip001.mp4", In: 72.3, Out: 85.1, Note: "great reaction"},
 		{Kind: KindImage, File: "phòto.jpg", Dur: 5, Note: "opening image #intro"},
+		{Kind: KindSection, Note: "Scene 1 — the arrival"},
 	} {
 		got, err := ParseItem(it.String())
 		if err != nil {
