@@ -125,11 +125,12 @@ saves the select, `q` quits. Markers land in `markers.txt`, selects in
 movielily edit filme        # or just `movielily edit` with a single sequence
 ```
 
-Left: the cut, one scene per line, colour-coded with an icon per kind
-(▶ clip · ∿ voice · ▦ image · ▣ title card · ✦ animated card · ♪ bed ·
-◱ overlay). Right: previews (first/last frame, the rendered card, or the
-voice waveform, in kitty/Ghostty/WezTerm) plus details, including where the
-scene starts in the finished movie.
+Three panes. **Left**: the cut, one scene per line, colour-coded with an icon
+per kind (▶ clip · ∿ voice · ▦ image · ▣ title card · ✦ animated card · ♪ bed ·
+◱ overlay · ⧉ nested). **Centre**: a large single-frame preview of the
+selected scene (the clip's start frame, the rendered card, or the voice
+waveform, in kitty/Ghostty/WezTerm) with its timing and grade summary beneath.
+**Right**: the scene's note.
 
 | key | action |
 |---|---|

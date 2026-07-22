@@ -44,11 +44,6 @@ func (e *editor) requestPreview() {
 			return
 		}
 		req.firstSrc, req.firstAt = clip, 0
-		last := it.Dur - 0.05
-		if last < 0 {
-			last = 0
-		}
-		req.lastSrc, req.lastAt = clip, last
 	case it.Kind == model.KindOverlay:
 		abs, err := e.p.ResolveFootage(it.File)
 		if err != nil {
@@ -75,12 +70,9 @@ func (e *editor) requestPreview() {
 		if err != nil {
 			return
 		}
+		// Just the start frame (the clip's IN point) — the centre pane shows
+		// one image.
 		req.firstSrc, req.firstAt = abs, it.In
-		last := it.Out - 0.05
-		if last < it.In {
-			last = it.In
-		}
-		req.lastSrc, req.lastAt = abs, last
 	}
 	select { // drop a stale pending request
 	case <-e.reqCh:

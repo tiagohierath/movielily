@@ -88,45 +88,59 @@ func tern(cond bool, a, b string) string {
 
 func num2(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
 
+// computeLayout lays out three columns: the edit-decision list on the left,
+// a large single-frame video preview (the selected clip's start point) with
+// its info below in the centre, and the note on the right.
 func (e *editor) computeLayout() {
-	e.rightW = e.w * 42 / 100
-	if e.rightW < 34 {
-		e.rightW = 34
-	}
-	if e.rightW > e.w-26 {
-		e.rightW = e.w - 26
-	}
-	if e.rightW < 20 {
-		e.rightW = 20
-	}
-	e.leftW = e.w - e.rightW - 1
-
 	e.listTop = 2
 	e.listBottom = e.h - 1
-	e.imgCol = e.leftW + 3
-	e.imgCols = e.rightW - 4
-	if e.imgCols < 10 {
-		e.imgCols = e.rightW - 2
-	}
 
-	avail := e.listBottom - e.listTop + 1
-	e.imgRows = (avail - 2 - 5 - 2) / 2
-	for {
-		if e.imgRows < 3 {
-			e.imgRows = 3
+	e.leftW = e.w * 38 / 100
+	if e.leftW < 22 {
+		e.leftW = 22
+	}
+	e.notesW = e.w * 22 / 100
+	if e.notesW < 16 {
+		e.notesW = 16
+	}
+	if e.notesW > 32 {
+		e.notesW = 32
+	}
+	// centre gets the rest, minus the two 1-column dividers.
+	e.centerW = e.w - e.leftW - e.notesW - 2
+	if e.centerW < 14 { // tiny terminal: take space back from the sides
+		e.centerW = 14
+		e.notesW = e.w - e.leftW - e.centerW - 2
+		if e.notesW < 8 {
+			e.notesW = 8
+			e.leftW = e.w - e.centerW - e.notesW - 2
 		}
-		if e.imgRows > 16 {
-			e.imgRows = 16
-		}
-		e.firstLabelRow = e.listTop
-		e.firstImgRow = e.firstLabelRow + 1
-		e.lastLabelRow = e.firstImgRow + e.imgRows + 1
-		e.lastImgRow = e.lastLabelRow + 1
-		e.detailsRow = e.lastImgRow + e.imgRows + 1
-		if e.detailsRow <= e.h-1 || e.imgRows <= 3 {
-			break
-		}
-		e.imgRows--
+	}
+	e.centerCol = e.leftW + 2
+	e.notesCol = e.leftW + e.centerW + 3
+	e.rightW = e.notesW // legacy alias
+
+	// Centre video box: a margin inside the pane, most of the height, with an
+	// info block ("more info / colour grading") under it.
+	e.imgCol = e.centerCol + 1
+	e.imgCols = e.centerW - 2
+	if e.imgCols < 4 {
+		e.imgCols = e.centerW
+	}
+	e.firstLabelRow = e.listTop
+	e.firstImgRow = e.listTop + 1
+	infoRows := 7
+	avail := e.listBottom - e.firstImgRow + 1
+	e.imgRows = avail - 1 - infoRows
+	if e.imgRows < 3 {
+		e.imgRows = 3
+	}
+	if e.imgRows > 40 {
+		e.imgRows = 40
+	}
+	e.detailsRow = e.firstImgRow + e.imgRows + 1
+	if e.detailsRow > e.listBottom-1 {
+		e.detailsRow = e.listBottom - 1
 	}
 }
 
@@ -485,95 +499,185 @@ func (e *editor) dividerCell(i, visible int) string {
 	return "\x1b[" + style + "m" + ch + "\x1b[0m"
 }
 
+// drawRight paints the centre "video" pane and the right "notes" pane (and
+// the divider between them), clearing both first.
 func (e *editor) drawRight() {
 	for r := e.listTop; r <= e.listBottom; r++ {
-		e.put(r, e.leftW+2, strings.Repeat(" ", e.rightW))
+		e.put(r, e.centerCol, strings.Repeat(" ", e.centerW))
+		e.put(r, e.notesCol-1, "\x1b[90m│\x1b[0m")
+		e.put(r, e.notesCol, strings.Repeat(" ", e.notesW))
 	}
 	if len(e.items) == 0 {
 		return
 	}
-	it := e.items[e.cursor]
-	col := e.leftW + 3
+	e.drawCenter()
+	e.drawNotes()
+}
 
-	if it.IsSection() {
+// centerLabel is the coloured kind label + a dim sub-label for the pane title.
+func centerLabel(it model.SequenceItem) (label, sub string) {
+	switch {
+	case it.IsSection():
+		return "\x1b[1;36msection\x1b[0m", ""
+	case it.Kind == model.KindAudio:
+		return "\x1b[1;34maudio bed\x1b[0m", "plays under the whole export"
+	case it.Kind == model.KindTitle:
+		return "\x1b[1;33mtitle card\x1b[0m", it.File
+	case it.Kind == model.KindAnim:
+		return "\x1b[1;36manimated card\x1b[0m", it.File
+	case it.Kind == model.KindUse:
+		return "\x1b[1;36mnested sequence\x1b[0m", strings.TrimSuffix(it.File, ".txt")
+	case it.Kind == model.KindOverlay:
+		return "\x1b[1;35moverlay\x1b[0m", "rides the scene above"
+	case it.Kind == model.KindImage:
+		return "\x1b[1;35mimage\x1b[0m", "start frame"
+	case model.IsAudioFile(it.File):
+		return "\x1b[1;32mvoice\x1b[0m", "waveform of this segment"
+	default:
+		return "\x1b[1mvideo\x1b[0m", "start frame · " + mmss(it.In)
+	}
+}
+
+// drawCenter draws the video pane: a kind label, the single start-frame image
+// (placed async by drawImages), and the info/grade block beneath it.
+func (e *editor) drawCenter() {
+	it := e.items[e.cursor]
+	col := e.imgCol
+	label, sub := centerLabel(it)
+	head := label
+	if sub != "" {
+		head += "  \x1b[2m" + trunc(sub, e.centerW-14) + "\x1b[0m"
+	}
+	e.put(e.firstLabelRow, col, head)
+
+	// Placeholder text where the image will land (or why there is none).
+	switch {
+	case it.IsSection():
 		title := strings.TrimSpace(it.Note)
 		if title == "" {
 			title = "(untitled section)"
 		}
 		n, dur := e.sectionStats(e.cursor)
-		e.put(e.firstLabelRow, col, "\x1b[1;36msection\x1b[0m")
-		e.put(e.firstImgRow, col, "\x1b[1m"+trunc(title, e.rightW-2)+"\x1b[0m")
-		e.put(e.firstImgRow+2, col, fmt.Sprintf("%d scene(s) · %s", n, mmss(dur)))
-		e.put(e.firstImgRow+4, col, "\x1b[2me rename · o new section · d delete\x1b[0m")
+		e.put(e.firstImgRow+1, col, "\x1b[1m"+trunc(title, e.centerW-2)+"\x1b[0m")
+		e.put(e.firstImgRow+3, col, fmt.Sprintf("%d scene(s) · %s", n, mmss(dur)))
 		return
-	}
-
-	switch {
-	case !e.kitty:
-		e.put(e.firstLabelRow, col, "\x1b[2mpreview needs a kitty-compatible terminal\x1b[0m")
 	case it.Kind == model.KindAudio:
-		e.put(e.firstLabelRow, col, "\x1b[1;34maudio bed\x1b[0m")
-		e.put(e.firstImgRow, col, "\x1b[2mplays under the whole export\x1b[0m")
-	case it.Kind == model.KindTitle:
-		e.put(e.firstLabelRow, col, "\x1b[1;33mtitle card\x1b[0m  \x1b[2m"+trunc(it.File, 20)+"\x1b[0m")
-		e.put(e.firstImgRow, col, "\x1b[2mrendering…\x1b[0m")
-	case it.Kind == model.KindAnim:
-		e.put(e.firstLabelRow, col, "\x1b[1;36manimated card\x1b[0m  \x1b[2m"+trunc(it.File, 20)+"\x1b[0m")
-		if _, ok := manim.Cached(e.p, it.File, it.Note); ok {
-			e.put(e.firstImgRow, col, "\x1b[2mrendering…\x1b[0m")
-		} else {
-			e.put(e.firstImgRow, col, "\x1b[2mnot rendered yet (renders on export/review)\x1b[0m")
-		}
+		e.put(e.firstImgRow+1, col, "\x1b[2m♪ no picture — this bed is audio only\x1b[0m")
 	case it.Kind == model.KindUse:
-		e.put(e.firstLabelRow, col, "\x1b[1;36mnested sequence\x1b[0m")
-		e.put(e.firstImgRow, col, "\x1b[2msplices "+trunc(strings.TrimSuffix(it.File, ".txt"), 24)+" here on review/export\x1b[0m")
-	case it.Kind == model.KindOverlay:
-		e.put(e.firstLabelRow, col, "\x1b[1;35moverlay\x1b[0m  \x1b[2mrides the scene above\x1b[0m")
-		e.put(e.firstImgRow, col, "\x1b[2mrendering…\x1b[0m")
-	case it.Kind == model.KindImage:
-		e.put(e.firstLabelRow, col, "\x1b[1;35mimage\x1b[0m")
-		e.put(e.firstImgRow, col, "\x1b[2mrendering…\x1b[0m")
-	case model.IsAudioFile(it.File):
-		e.put(e.firstLabelRow, col, "\x1b[1;32mvoice\x1b[0m  \x1b[2mwaveform of this segment\x1b[0m")
-		e.put(e.firstImgRow, col, "\x1b[2mrendering…\x1b[0m")
+		e.put(e.firstImgRow+1, col, "\x1b[2msplices in on review/export\x1b[0m")
+	case it.Kind == model.KindAnim:
+		if _, ok := manim.Cached(e.p, it.File, it.Note); !ok {
+			e.put(e.firstImgRow+1, col, "\x1b[2mnot rendered yet (renders on export/review)\x1b[0m")
+		} else if !e.kitty {
+			e.put(e.firstImgRow+1, col, "\x1b[2m(image preview needs a kitty terminal)\x1b[0m")
+		} else {
+			e.put(e.firstImgRow+1, col, "\x1b[2mrendering…\x1b[0m")
+		}
+	case !e.kitty:
+		e.put(e.firstImgRow+1, col, "\x1b[2m(image preview needs a kitty-compatible terminal)\x1b[0m")
 	default:
-		e.put(e.firstLabelRow, col, "\x1b[1mfirst frame\x1b[0m  \x1b[2m"+mmss(it.In)+"\x1b[0m")
-		e.put(e.firstImgRow, col, "\x1b[2mrendering…\x1b[0m")
-		e.put(e.lastLabelRow, col, "\x1b[1mlast frame\x1b[0m  \x1b[2m"+mmss(it.Out)+"\x1b[0m")
-		e.put(e.lastImgRow, col, "\x1b[2mrendering…\x1b[0m")
+		e.put(e.firstImgRow+1, col, "\x1b[2mrendering…\x1b[0m")
 	}
 
-	// Where this scene sits in the finished movie, for orientation (and for
-	// eyeballing YouTube chapter times).
+	// Info block: timing + grade summary + the "c to grade" hint.
 	at := 0.0
 	for i := 0; i < e.cursor && i < len(e.items); i++ {
 		at += e.items[i].Duration()
 	}
-
 	dr := e.detailsRow
-	e.put(dr, col, "\x1b[1m"+trunc(it.File, e.rightW-2)+"\x1b[0m")
 	switch {
-	case it.Kind == model.KindImage:
-		e.put(dr+1, col, fmt.Sprintf("still · %ss · at %s", trimf(it.Dur), mmss(at)))
-	case it.Kind == model.KindTitle:
-		e.put(dr+1, col, fmt.Sprintf("card · %ss · at %s", trimf(it.Dur), mmss(at)))
-	case it.Kind == model.KindAnim:
-		e.put(dr+1, col, fmt.Sprintf("anim · %ss · at %s", trimf(it.Dur), mmss(at)))
+	case it.Kind == model.KindImage, it.Kind == model.KindTitle, it.Kind == model.KindAnim:
+		e.put(dr, col, fmt.Sprintf("\x1b[2m%ss on screen · at %s\x1b[0m", trimf(it.Dur), mmss(at)))
 	case it.Kind == model.KindOverlay:
-		e.put(dr+1, col, fmt.Sprintf("+%ss for %ss @ %s", trimf(it.In), trimf(it.Dur), it.Place))
+		e.put(dr, col, fmt.Sprintf("\x1b[2m+%ss for %ss @ %s\x1b[0m", trimf(it.In), trimf(it.Dur), it.Place))
 	case it.Kind == model.KindAudio:
-		e.put(dr+1, col, fmt.Sprintf("bed · %sdB · under the whole cut", trimf(it.Gain)))
+		e.put(dr, col, fmt.Sprintf("\x1b[2m%sdB · under the whole cut\x1b[0m", trimf(it.Gain)))
 	case model.IsAudioFile(it.File):
-		e.put(dr+1, col, fmt.Sprintf("voice %s → %s  (%ss) · at %s", mmss(it.In), mmss(it.Out), trimf(it.Duration()), mmss(at)))
-	default:
-		e.put(dr+1, col, fmt.Sprintf("%s → %s  (%ss) · at %s", mmss(it.In), mmss(it.Out), trimf(it.Duration()), mmss(at)))
+		e.put(dr, col, fmt.Sprintf("\x1b[2m%s → %s  (%ss) · at %s\x1b[0m", mmss(it.In), mmss(it.Out), trimf(it.Duration()), mmss(at)))
+	case !it.IsSection():
+		e.put(dr, col, fmt.Sprintf("\x1b[2m%s → %s  (%ss) · at %s\x1b[0m", mmss(it.In), mmss(it.Out), trimf(it.Duration()), mmss(at)))
 	}
-	if tags := model.Tags(it.Note); len(tags) > 0 {
-		e.put(dr+2, col, "\x1b[33m"+trunc(strings.Join(tags, " "), e.rightW-2)+"\x1b[0m")
+	if grade.GradableKind(it.Kind) {
+		_, g := grade.SplitNote(it.Note)
+		if g.IsNeutral() {
+			e.put(dr+1, col, "\x1b[2mgrade: none · c to colour-grade\x1b[0m")
+		} else {
+			e.put(dr+1, col, "\x1b[33mgrade:\x1b[0m "+trunc(g.String(), e.centerW-9))
+		}
 	}
-	if note := strings.TrimSpace(it.Note); note != "" {
-		e.put(dr+3, col, "\x1b[2m"+trunc(note, e.rightW-2)+"\x1b[0m")
+}
+
+// drawNotes fills the right pane with the scene's note (grade tokens removed,
+// tags coloured), word-wrapped, plus an edit hint.
+func (e *editor) drawNotes() {
+	it := e.items[e.cursor]
+	col := e.notesCol
+	e.put(e.listTop, col, "\x1b[1mnotes\x1b[0m")
+	human, _ := grade.SplitNote(it.Note)
+	human = strings.TrimSpace(human)
+	row := e.listTop + 2
+	if human == "" {
+		e.put(row, col, "\x1b[2m(no note — press e)\x1b[0m")
+		return
 	}
+	for _, line := range wrapText(human, e.notesW) {
+		if row > e.listBottom-1 {
+			break
+		}
+		e.put(row, col, colourTags(line))
+		row++
+	}
+	if tags := model.Tags(it.Note); len(tags) > 0 && row < e.listBottom-1 {
+		e.put(row+1, col, "\x1b[33m"+trunc(strings.Join(tags, " "), e.notesW)+"\x1b[0m")
+	}
+	e.put(e.listBottom, col, "\x1b[2me edit\x1b[0m")
+}
+
+// wrapText word-wraps s to width w (never splitting a word unless it alone
+// exceeds w).
+func wrapText(s string, w int) []string {
+	if w < 1 {
+		w = 1
+	}
+	var lines []string
+	var cur string
+	for _, word := range strings.Fields(s) {
+		switch {
+		case cur == "":
+			cur = word
+		case len([]rune(cur))+1+len([]rune(word)) <= w:
+			cur += " " + word
+		default:
+			lines = append(lines, cur)
+			cur = word
+		}
+		for len([]rune(cur)) > w { // a single over-long word: hard-split
+			r := []rune(cur)
+			lines = append(lines, string(r[:w]))
+			cur = string(r[w:])
+		}
+	}
+	if cur != "" {
+		lines = append(lines, cur)
+	}
+	return lines
+}
+
+// colourTags renders a line of note text, colouring any #tags yellow.
+func colourTags(line string) string {
+	locs := tagInline.FindAllStringIndex(line, -1)
+	if len(locs) == 0 {
+		return line
+	}
+	var b strings.Builder
+	pos := 0
+	for _, loc := range locs {
+		b.WriteString(line[pos:loc[0]])
+		b.WriteString("\x1b[33m" + line[loc[0]:loc[1]] + "\x1b[0m")
+		pos = loc[1]
+	}
+	b.WriteString(line[pos:])
+	return b.String()
 }
 
 func (e *editor) drawImages() {
@@ -581,18 +685,11 @@ func (e *editor) drawImages() {
 		return
 	}
 	kittyDeleteAll(e.out)
-	clear := func(top int) {
-		for r := 0; r < e.imgRows; r++ {
-			e.put(top+r, e.imgCol, strings.Repeat(" ", e.imgCols))
-		}
-	}
 	if e.curFirst != "" {
-		clear(e.firstImgRow)
+		for r := 0; r < e.imgRows; r++ {
+			e.put(e.firstImgRow+r, e.imgCol, strings.Repeat(" ", e.imgCols))
+		}
 		e.placeImage(e.curFirst, e.firstImgRow)
-	}
-	if e.curLast != "" {
-		clear(e.lastImgRow)
-		e.placeImage(e.curLast, e.lastImgRow)
 	}
 	io.WriteString(e.out, moveTo(e.h, e.w)) // park cursor
 }

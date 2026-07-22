@@ -130,8 +130,10 @@ type editor struct {
 	wantReselect bool
 	wantYoutube  bool
 
-	// layout (recomputed on resize)
-	leftW, rightW              int
+	// layout (recomputed on resize) — three panes: list | video | notes
+	leftW, rightW              int // leftW = list; rightW = notes (alias notesW)
+	centerCol, centerW         int // middle "video" pane (one start frame + info)
+	notesCol, notesW           int // right "notes" pane
 	listTop, listBottom        int
 	imgCol, imgCols, imgRows   int
 	firstLabelRow, firstImgRow int
