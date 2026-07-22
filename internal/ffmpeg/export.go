@@ -18,11 +18,19 @@ import (
 )
 
 // Export renders items to out using ffmpeg. Video clips are assumed to carry
-// audio (v1 scope: MP4/H264); images get matching silence.
+// audio (v1 scope: MP4/H264); images get matching silence, and a #mute tag on
+// a clip swaps its sound for silence (b-roll over a narration bed).
+//
+// Finishing touches applied automatically: ~15ms audio micro-fades at every
+// join (no clicks), a fade from/to black on the whole picture, a music-bed
+// fade-out at the end, optional #duck sidechain ducking of beds under the
+// timeline's sound, and a final loudnorm to YouTube's -14 LUFS.
+//
+// draft renders at half resolution with fast settings, for a quick full look.
 //
 // The invariant: source footage + instructions = export. Footage is only ever
 // read, so Export refuses to write its output over any source file.
-func Export(p *project.Project, items []model.SequenceItem, out string) error {
+func Export(p *project.Project, items []model.SequenceItem, out string, draft bool) error {
 	// Section headers are organisational only, audio beds run under the
 	// timeline, and overlays ride on top of it; none of them may enter the
 	// index-coupled concat graph below. Beds are mixed and overlays composited
@@ -63,10 +71,14 @@ func Export(p *project.Project, items []model.SequenceItem, out string) error {
 		}
 	}
 	items = playable
+	total := offset // full runtime, for end fades and duck/bed windows
 	if len(items) == 0 {
 		return fmt.Errorf("nothing to export: sequence is empty")
 	}
 	w, h, fps, crf := p.Config.Width, p.Config.Height, p.Config.FPS, p.Config.CRF
+	if draft {
+		w, h, crf = (w/2)&^1, (h/2)&^1, 28
+	}
 
 	outAbs, err := filepath.Abs(out)
 	if err != nil {
@@ -146,16 +158,26 @@ func Export(p *project.Project, items []model.SequenceItem, out string) error {
 			vIdx := input
 			input++
 			fmt.Fprintf(&fc, "[%d:v]%s[%s];", vIdx, vchainFor(it, w, h, fps), vlab)
-			fmt.Fprintf(&fc, "[%d:a]%s[%s];", aIdx, achain(), alab)
+			fmt.Fprintf(&fc, "[%d:a]%s[%s];", aIdx, achainClip(it.Duration()), alab)
 		default: // video
 			if it.Out <= it.In {
 				return fmt.Errorf("clip %q has out (%s) <= in (%s)", it.File, model.FormatSeconds(it.Out), model.FormatSeconds(it.In))
 			}
-			args = append(args, "-ss", model.FormatSeconds(it.In), "-t", model.FormatSeconds(it.Duration()), "-i", abs)
+			dur := model.FormatSeconds(it.Duration())
+			args = append(args, "-ss", model.FormatSeconds(it.In), "-t", dur, "-i", abs)
 			idx := input
 			input++
 			fmt.Fprintf(&fc, "[%d:v]%s[%s];", idx, vchainFor(it, w, h, fps), vlab)
-			fmt.Fprintf(&fc, "[%d:a]%s[%s];", idx, achain(), alab)
+			if model.HasTag(it.Note, "mute") {
+				// #mute: b-roll. The clip's own sound is replaced by silence
+				// so it can ride over a narration bed.
+				args = append(args, "-f", "lavfi", "-t", dur, "-i", "anullsrc=r=48000:cl=stereo")
+				aIdx := input
+				input++
+				fmt.Fprintf(&fc, "[%d:a]%s[%s];", aIdx, achain(), alab)
+			} else {
+				fmt.Fprintf(&fc, "[%d:a]%s[%s];", idx, achainClip(it.Duration()), alab)
+			}
 		}
 		vlabels = append(vlabels, "["+vlab+"]")
 		alabels = append(alabels, "["+alab+"]")
@@ -178,7 +200,11 @@ func Export(p *project.Project, items []model.SequenceItem, out string) error {
 			if err != nil {
 				return err
 			}
-			args = append(args, "-loop", "1", "-i", abs)
+			// The -t bound matters: an unbounded -loop 1 input never ends and
+			// can keep ffmpeg from ever finishing the encode. The looped image
+			// only needs to exist until its window closes; overlay's default
+			// repeatlast covers the rest of the film.
+			args = append(args, "-loop", "1", "-t", model.FormatSeconds(ov.end), "-i", abs)
 			corner, pct, err := model.ParsePlace(ov.it.Place)
 			if err != nil {
 				return err
@@ -195,12 +221,18 @@ func Export(p *project.Project, items []model.SequenceItem, out string) error {
 	}
 
 	// Audio beds: each starts at 0 and is mixed UNDER the timeline's own sound
-	// at its gain. duration=first ties the mix to the concat audio, so a long
-	// song is simply cut when the video ends; normalize=0 keeps the clips'
-	// sound at full level instead of averaging it down per input.
+	// at its gain, with a fade-out as the film ends so the music never hard
+	// cuts. A #duck bed is additionally sidechain-compressed by the timeline's
+	// sound, dipping automatically whenever someone talks. duration=first ties
+	// the mix to the concat audio (a long song is simply cut); normalize=0
+	// keeps the timeline at full level instead of averaging it down.
 	audioOut := "[outa]"
 	if len(beds) > 0 {
-		mix := "[outa]"
+		bedFade := ""
+		if total > 3 {
+			bedFade = fmt.Sprintf(",afade=t=out:st=%s:d=1.5", model.FormatSeconds(total-1.5))
+		}
+		var plain, ducked []string
 		for i, bed := range beds {
 			abs, err := p.ResolveFootage(bed.File)
 			if err != nil {
@@ -210,14 +242,44 @@ func Export(p *project.Project, items []model.SequenceItem, out string) error {
 				return fmt.Errorf("refusing to overwrite source footage %q with the export", bed.File)
 			}
 			args = append(args, "-i", abs)
-			lab := fmt.Sprintf("bed%d", i)
-			fmt.Fprintf(&fc, ";[%d:a]%s,volume=%sdB[%s]", input, achain(), model.FormatSeconds(bed.Gain), lab)
+			lab := fmt.Sprintf("[bed%d]", i)
+			fmt.Fprintf(&fc, ";[%d:a]%s,volume=%sdB%s%s", input, achain(), model.FormatSeconds(bed.Gain), bedFade, lab)
 			input++
-			mix += "[" + lab + "]"
+			if model.HasTag(bed.Note, "duck") {
+				ducked = append(ducked, lab)
+			} else {
+				plain = append(plain, lab)
+			}
 		}
-		fmt.Fprintf(&fc, ";%samix=inputs=%d:duration=first:normalize=0[mixa]", mix, len(beds)+1)
+		timeline := "[outa]"
+		if len(ducked) > 0 {
+			// One copy of the timeline keys the compressor, the other stays
+			// in the mix untouched.
+			fc.WriteString(";[outa]asplit=2[tl][key]")
+			timeline = "[tl]"
+			sub := ducked[0]
+			if len(ducked) > 1 {
+				fmt.Fprintf(&fc, ";%samix=inputs=%d:normalize=0[bsub]", strings.Join(ducked, ""), len(ducked))
+				sub = "[bsub]"
+			}
+			fmt.Fprintf(&fc, ";%s[key]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=400[bduck]", sub)
+			plain = append(plain, "[bduck]")
+		}
+		fmt.Fprintf(&fc, ";%s%samix=inputs=%d:duration=first:normalize=0[mixa]",
+			timeline, strings.Join(plain, ""), len(plain)+1)
 		audioOut = "[mixa]"
 	}
+
+	// Finishing: fade the whole picture from and to black, and normalise the
+	// final mix to YouTube's -14 LUFS (loudnorm resamples internally, so pin
+	// the rate back to 48k for the AAC encode).
+	if total > 2 {
+		fmt.Fprintf(&fc, ";%sfade=t=in:st=0:d=0.3,fade=t=out:st=%s:d=0.8[vfade]",
+			videoOut, model.FormatSeconds(total-0.8))
+		videoOut = "[vfade]"
+	}
+	fmt.Fprintf(&fc, ";%sloudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[afin]", audioOut)
+	audioOut = "[afin]"
 
 	// Delivery settings tuned for YouTube's upload recommendations: H.264
 	// High profile, constant frame rate, a keyframe every 2 seconds, 2
@@ -253,13 +315,11 @@ func vchain(w, h, fps int) string {
 // bars if shapes differ); a #cover tag in the note fills the frame instead,
 // cropping the edges that don't fit. Same grammar as every other tag.
 func vchainFor(it model.SequenceItem, w, h, fps int) string {
-	for _, t := range model.Tags(it.Note) {
-		if t == "cover" {
-			return fmt.Sprintf(
-				"scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,setsar=1,fps=%d,format=yuv420p",
-				w, h, w, h, fps,
-			)
-		}
+	if model.HasTag(it.Note, "cover") {
+		return fmt.Sprintf(
+			"scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,setsar=1,fps=%d,format=yuv420p",
+			w, h, w, h, fps,
+		)
 	}
 	return vchain(w, h, fps)
 }
@@ -292,4 +352,15 @@ func overlayScalePos(corner string, pct, w, h int) (scale, pos string) {
 // achain normalises audio so every segment is concat-compatible.
 func achain() string {
 	return "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo"
+}
+
+// achainClip is achain plus ~15ms micro-fades at both ends, so joins between
+// scenes can never click or pop. Too-short clips skip the fades.
+func achainClip(dur float64) string {
+	const f = 0.015
+	if dur <= 4*f {
+		return achain()
+	}
+	return fmt.Sprintf("%s,afade=t=in:st=0:d=%g,afade=t=out:st=%s:d=%g",
+		achain(), f, model.FormatSeconds(dur-f), f)
 }

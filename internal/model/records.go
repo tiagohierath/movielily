@@ -129,6 +129,20 @@ const (
 	KindAnim    ItemKind = "anim"
 )
 
+// HasTag reports whether the note carries #name (the leading # optional in
+// the query). Tags double as per-item switches: #cover, #mute, #duck.
+func HasTag(note, name string) bool {
+	if !strings.HasPrefix(name, "#") {
+		name = "#" + name
+	}
+	for _, t := range Tags(note) {
+		if t == name {
+			return true
+		}
+	}
+	return false
+}
+
 // IsAudioFile reports whether a media reference is a pure audio file (a voice
 // recording, music). Such files can sit in the timeline as `video|` items: the
 // sound occupies the slot and the picture is a black canvas to decorate with

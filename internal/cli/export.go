@@ -13,9 +13,10 @@ import (
 )
 
 func newExportCmd() *cobra.Command {
-	return &cobra.Command{
+	var draft bool
+	cmd := &cobra.Command{
 		Use:   "export <sequence> <output.mp4>",
-		Short: "Render a sequence to a single video with ffmpeg",
+		Short: "Render a sequence to a single video with ffmpeg (YouTube-ready)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p, err := project.Open()
@@ -30,14 +31,14 @@ func newExportCmd() *cobra.Command {
 				return fmt.Errorf("sequence %q is empty or missing", args[0])
 			}
 			fmt.Printf("exporting %q (%d item(s)) -> %s\n", args[0], len(items), args[1])
-			if err := ffmpeg.Export(p, items, args[1]); err != nil {
+			if err := ffmpeg.Export(p, items, args[1], draft); err != nil {
 				return err
 			}
 			fmt.Printf("done: %s\n", args[1])
 			// In a versioned project every render becomes a findable version:
 			// the snapshot ties the published file to the exact cut behind it.
 			// Projects that never opted into snapshots are left alone.
-			if hasSnapshotRepo(p.Root) {
+			if hasSnapshotRepo(p.Root) && !draft {
 				if err := takeSnapshot("export " + filepath.Base(args[1])); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: auto-snapshot failed: %v\n", err)
 				}
@@ -45,4 +46,6 @@ func newExportCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&draft, "draft", false, "half resolution, fast encode: a quick full preview, not for upload")
+	return cmd
 }

@@ -37,7 +37,9 @@ fetched ephemerally when missing.
 | `movielily seq show <seq>` · `seq list` | inspect sequences |
 | `movielily edit [seq]` | the interactive editor (see keys below) |
 | `movielily review <seq> [--from N]` | watch the cut in mpv, simulated export, no render |
-| `movielily export <seq> <out.mp4>` | render the real file (auto-snapshots in versioned projects) |
+| `movielily export <seq> <out.mp4> [--draft]` | render the real file (auto-snapshots; --draft = half-res quick look) |
+| `movielily chapters <seq>` | YouTube chapters from your sections, ready for the description |
+| `movielily frame <clip> <t> <out.png>` | full-resolution frame grab (thumbnails) |
 | `movielily snapshot [message]` | commit the instructions to git (creates the repo on first use) |
 | `movielily snapshot list` · `snapshot restore <id>` | see versions · roll back (safely: it snapshots first) |
 | `movielily version` | version info |
@@ -62,8 +64,12 @@ anim|card.py|3.8|Fim                              manim card (length measured)
 audio|song.mp3|-12|music bed                      under the whole cut, cut at the end
 ```
 
-Notes carry `#tags` anywhere; `search` and `tag` find them, the TUI colours
-them, and `#cover` on visual items switches letterbox to fill-and-crop.
+Notes carry `#tags` anywhere; `search` and `tag` find them and the TUI
+colours them. Three tags are also switches:
+
+- `#cover` on a visual item: fill the frame (crop) instead of letterboxing;
+- `#mute` on a clip: silence its own sound (b-roll riding over narration);
+- `#duck` on a bed: sidechain-duck the music under the timeline's voice.
 
 ## Workflows
 
@@ -111,7 +117,7 @@ scene starts in the finished movie.
 | key | action |
 |---|---|
 | `j`/`k`, arrows | move · `J`/`K` reorder · `g`/`G` top/bottom · `[`/`]` prev/next section |
-| `Enter` | redo the scene's in/out in an mpv window; the editor stays live, the trim applies when you confirm |
+| `Enter` | open the thing under the cursor in an mpv window, editor stays live: clips replay for redoing in/out (applies when you confirm), images/overlays/cards/animations/beds just open |
 | `r` / `R` | watch from here / the whole cut (simulated export in an mpv window, nothing renders) |
 | `T` / `A` | insert a title card / animated card below the cursor: pick template (last one prefilled), type text |
 | `e` | edit the note (or a card's text, or a section's heading) |
@@ -186,14 +192,25 @@ the same in a separate window.
 
 ```bash
 movielily export filme filme.mp4
+movielily export filme rascunho.mp4 --draft   # half-res, fast: a quick look
 ```
 
 One H.264 file, tuned to YouTube's upload recommendations: High profile
 4.2, constant frame rate, keyframe every 2s, 2 B-frames, BT.709 flagged,
-yuv420p, AAC-LC 320k 48kHz, `+faststart`. Resolution, fps and CRF come from
+yuv420p, AAC-LC 48kHz, `+faststart`. Resolution, fps and CRF come from
 `movielily.conf`. Export refuses to write into `footage/` or over any source.
-In a snapshotted project, every export automatically commits a snapshot named
-after the output file, so any published video maps to its exact cut.
+In a snapshotted project, every real export automatically commits a snapshot
+named after the output file, so any published video maps to its exact cut.
+
+Finishing is automatic: ~15ms audio micro-fades at every join (no clicks or
+pops), a fade from and to black on the whole picture, a 1.5s music-bed
+fade-out at the end, `#duck` beds compressed under the voice, and a final
+loudness normalisation to YouTube's -14 LUFS, so takes recorded on different
+days land at the same level.
+
+After exporting, `movielily chapters filme` prints the YouTube chapter list
+from your sections, and `movielily frame clip.mp4 1:02 thumb.png` grabs a
+full-resolution still for the thumbnail.
 
 ## Snapshots and versions (git)
 

@@ -32,6 +32,21 @@ func Thumbnail(src string, at float64, isImage bool, outPNG string) error {
 	return nil
 }
 
+// Frame extracts one FULL-resolution frame at `at` seconds as a PNG (the
+// thumbnail workflow; Thumbnail above is the small preview variant).
+func Frame(src string, at float64, outPNG string) error {
+	args := []string{"-nostdin", "-loglevel", "error", "-y"}
+	if at > 0 {
+		args = append(args, "-ss", model.FormatSeconds(at))
+	}
+	args = append(args, "-i", src, "-map", "0:v:0", "-frames:v", "1", "-f", "image2", outPNG)
+	cmd := exec.Command("ffmpeg", args...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("ffmpeg frame: %v: %s", err, out)
+	}
+	return nil
+}
+
 // Waveform draws the [in,out] slice of an audio file as a waveform PNG, the
 // preview a voice segment gets instead of a first frame. Read-only, like
 // everything else that touches footage.

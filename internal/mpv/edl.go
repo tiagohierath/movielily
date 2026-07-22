@@ -106,6 +106,24 @@ func reviewArgs(p *project.Project, name string, items []model.SequenceItem, fro
 		fmt.Sprintf("--vf=lavfi=[scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1]", w, h, w, h),
 	}
 
+	// #mute clips are silent in the export; silence the same timeline windows
+	// here so review sounds like the real thing.
+	var muteWins []string
+	{
+		o := 0.0
+		for _, it := range items[from:] {
+			if it.Kind == model.KindVideo && !model.IsAudioFile(it.File) && model.HasTag(it.Note, "mute") {
+				muteWins = append(muteWins, fmt.Sprintf("between(t,%s,%s)",
+					model.FormatSeconds(o), model.FormatSeconds(o+it.Duration())))
+			}
+			o += it.Duration()
+		}
+	}
+	muteChain := ""
+	if len(muteWins) > 0 {
+		muteChain = fmt.Sprintf("volume=0:enable='%s',", strings.Join(muteWins, "+"))
+	}
+
 	var bedItems []model.SequenceItem
 	for _, it := range items {
 		if it.IsAudio() {
@@ -114,6 +132,9 @@ func reviewArgs(p *project.Project, name string, items []model.SequenceItem, fro
 	}
 	beds = len(bedItems)
 	if beds == 0 {
+		if muteChain != "" && clips > 0 {
+			args = append(args, "--lavfi-complex=[aid1]"+strings.TrimSuffix(muteChain, ",")+"[ao]")
+		}
 		return args, clips, stills, 0, nil
 	}
 
@@ -145,7 +166,7 @@ func reviewArgs(p *project.Project, name string, items []model.SequenceItem, fro
 		// so: aresample=async fills mid-timeline gaps with silence, and apad
 		// pads a trailing still out to the exact timeline length; without
 		// them the bed drifts out of sync after the first still (verified).
-		fmt.Fprintf(&g, "[aid1]aresample=async=1000:first_pts=0,apad=whole_dur=%s[t]", model.FormatSeconds(remaining))
+		fmt.Fprintf(&g, "[aid1]%saresample=async=1000:first_pts=0,apad=whole_dur=%s[t]", muteChain, model.FormatSeconds(remaining))
 		mix = append(mix, "[t]")
 		for i, bed := range bedItems {
 			fmt.Fprintf(&g, ";[aid%d]%s[b%d]", 2+i, bedChain(bed), i)
@@ -205,6 +226,20 @@ func ReviewFrom(p *project.Project, name string, items []model.SequenceItem, fro
 	cmd := exec.Command("mpv", args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return cmd.Run()
+}
+
+// OpenDetached shows any media file in its own mpv window and returns at
+// once: the TUI's "Enter opens things" for stills, cards, animations and
+// beds. Images stay up until the window is closed.
+func OpenDetached(path string) error {
+	cmd := exec.Command("mpv",
+		"--force-window=yes", "--keep-open=yes", "--image-display-duration=inf",
+		"--title=movielily · "+filepath.Base(path), path)
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("could not start mpv (is it installed?): %w", err)
+	}
+	go func() { _ = cmd.Wait() }()
+	return nil
 }
 
 // ReviewDetached starts the same simulated-export playback in its own mpv

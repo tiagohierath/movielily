@@ -2,9 +2,12 @@ package cli
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
+	"movielily/internal/ffmpeg"
 	"movielily/internal/model"
+	"movielily/internal/project"
 )
 
 func joinArgs(args []string) string { return strings.TrimSpace(strings.Join(args, " ")) }
@@ -57,3 +60,24 @@ func formatNote(n model.Note) string {
 }
 
 func round1(f float64) float64 { return float64(int64(f*10+0.5)) / 10 }
+
+// refuseInsideFootage guards writes: nothing movielily produces may land in
+// footage/ (the read-only source area).
+func refuseInsideFootage(p *project.Project, out string) error {
+	outAbs, err := filepath.Abs(out)
+	if err != nil {
+		return err
+	}
+	footAbs, err := filepath.Abs(p.Footage())
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(footAbs, outAbs)
+	if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("refusing to write into footage/ (it is read-only source material)")
+	}
+	return nil
+}
+
+// frameGrab is the CLI shim over ffmpeg.Frame.
+func frameGrab(src string, at float64, out string) error { return ffmpeg.Frame(src, at, out) }

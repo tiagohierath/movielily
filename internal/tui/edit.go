@@ -1529,36 +1529,54 @@ func (e *editor) reselect() {
 		return
 	}
 	it := e.items[e.cursor]
+	// Enter OPENS whatever the cursor is on, always in a detached mpv window
+	// so the editor never closes: clips fall through to the redo-in/out flow
+	// below; everything else is simply shown or played.
+	open := func(path, what string) {
+		if err := mpv.OpenDetached(path); err != nil {
+			e.status = "mpv: " + err.Error()
+		} else {
+			e.status = "opened " + what + " in an mpv window"
+		}
+		e.drawAll()
+		e.out.Flush()
+	}
+	fail := func(msg string) {
+		e.status = msg
+		e.drawAll()
+		e.out.Flush()
+	}
 	switch {
 	case it.IsSection():
-		e.status = "sections have no footage to play"
-		e.drawAll()
-		e.out.Flush()
+		fail("sections have no footage to open")
 		return
-	case it.Kind == model.KindImage:
-		e.status = "stills have no in/out · t sets the duration"
-		e.drawAll()
-		e.out.Flush()
+	case it.Kind == model.KindImage || it.Kind == model.KindOverlay:
+		if abs, err := e.p.ResolveFootage(it.File); err != nil {
+			fail(err.Error())
+		} else {
+			open(abs, it.File)
+		}
 		return
 	case it.Kind == model.KindAudio:
-		e.status = "audio beds have no in/out, they run under the whole export"
-		e.drawAll()
-		e.out.Flush()
+		if abs, err := e.p.ResolveFootage(it.File); err != nil {
+			fail(err.Error())
+		} else {
+			open(abs, "bed "+it.File)
+		}
 		return
 	case it.Kind == model.KindTitle:
-		e.status = "title cards have no in/out · t duration · e text"
-		e.drawAll()
-		e.out.Flush()
+		if png, err := typst.Render(e.p, it.File, it.Note); err != nil {
+			fail("typst: " + err.Error())
+		} else {
+			open(png, "card "+strconv.Quote(it.Note))
+		}
 		return
 	case it.Kind == model.KindAnim:
-		e.status = "animated cards have no in/out · their length is the animation's"
-		e.drawAll()
-		e.out.Flush()
-		return
-	case it.Kind == model.KindOverlay:
-		e.status = "overlays ride the scene above · t duration · e note"
-		e.drawAll()
-		e.out.Flush()
+		if clip, ok := manim.Cached(e.p, it.File, it.Note); ok {
+			open(clip, "animation "+strconv.Quote(it.Note))
+		} else {
+			fail("animation not rendered yet (it renders on export/review)")
+		}
 		return
 	}
 
