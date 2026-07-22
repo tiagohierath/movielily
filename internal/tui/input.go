@@ -12,6 +12,10 @@ func (e *editor) handleInput(chunk []byte) (quit bool) {
 		e.handleSnapshots(chunk)
 		return false
 	}
+	if e.screen == 2 {
+		e.handleGrade(chunk)
+		return false
+	}
 	if e.mode == modeEdit {
 		e.handleEdit(chunk)
 		return false
@@ -74,6 +78,8 @@ func (e *editor) handleInput(chunk []byte) (quit bool) {
 				e.startEdit()
 			case 't':
 				e.startDurEdit()
+			case 'c':
+				e.startGradeEdit()
 			case '+', '=':
 				e.nudge(1)
 			case '-':
@@ -146,6 +152,11 @@ func (e *editor) handleInput(chunk []byte) (quit bool) {
 	}
 	if e.screen == 1 {
 		e.drawSnapshots()
+		e.out.Flush()
+		return false
+	}
+	if e.screen == 2 {
+		e.drawGrade()
 		e.out.Flush()
 		return false
 	}
@@ -256,6 +267,7 @@ var palette = []palCmd{
 	{"undo", "undo the last change", func(e *editor) bool { e.undoOp(); return false }},
 	{"redo", "redo an undone change", func(e *editor) bool { e.redoOp(); return false }},
 	{"vim", "edit the sequence file in vim", func(e *editor) bool { e.wantVim = true; return false }},
+	{"grade", "colour grade / film grain for the scene", func(e *editor) bool { e.startGradeEdit(); return false }},
 	{"snapshots", "the git version graph (Tab does this too)", func(e *editor) bool { e.openSnapshots(); return false }},
 	{"youtube", "post the last render to YouTube (private)", func(e *editor) bool { e.wantYoutube = true; return false }},
 	{"help", "the key reference", func(e *editor) bool { e.helpOpen = true; return false }},

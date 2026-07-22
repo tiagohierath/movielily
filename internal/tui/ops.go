@@ -2,10 +2,12 @@ package tui
 
 import (
 	"fmt"
-	"movielily/internal/model"
-	"movielily/internal/mpv"
 	"path/filepath"
 	"strings"
+
+	"movielily/internal/grade"
+	"movielily/internal/model"
+	"movielily/internal/mpv"
 )
 
 // ---- operations -----------------------------------------------------------
@@ -468,6 +470,131 @@ func (e *editor) commitDur() {
 	e.dirty = true
 	e.forceScene = true
 	e.status = fmt.Sprintf("duration %ss · w to save", trimf(secs))
+}
+
+// startGradeEdit opens the grade panel for the scene under the cursor: a live
+// slider view over its colour-grade / film-grain parameters. The same values
+// can be edited as text (inline note tokens, or 'grade' presets on the CLI);
+// panel and text are two views of the one reversible key=value grade.
+func (e *editor) startGradeEdit() {
+	if len(e.items) == 0 {
+		return
+	}
+	if !grade.GradableKind(e.items[e.cursor].Kind) {
+		e.status = "only footage/cards take a grade (not beds or sections)"
+		return
+	}
+	e.gradeIdx = 0
+	e.screen = 2
+	e.drawGrade()
+	e.out.Flush()
+}
+
+// currentGrade parses the selected scene's grade from its note.
+func (e *editor) currentGrade() *grade.Grade {
+	_, g := grade.SplitNote(e.items[e.cursor].Note)
+	return g
+}
+
+// setGradeParam writes one parameter back into the scene's note (clamped),
+// keeping the human text. Neutral values drop out, so a grade is always the
+// minimal reversible text.
+func (e *editor) setGradeParam(name string, v float64) {
+	g := e.currentGrade()
+	specs := grade.Specs()
+	for _, s := range specs {
+		if s.Name == name {
+			if v < s.Min {
+				v = s.Min
+			}
+			if v > s.Max {
+				v = s.Max
+			}
+		}
+	}
+	if err := g.Set(name, v); err != nil {
+		e.status = err.Error()
+		return
+	}
+	e.pushUndo()
+	e.items[e.cursor].Note = grade.MergeIntoNote(e.items[e.cursor].Note, g)
+	e.dirty = true
+	e.forceScene = true
+}
+
+// handleGrade drives the grade panel: up/down pick a parameter, left/right (or
+// h/l, -/+) adjust it, 0 resets it to neutral, r resets all, Tab/q/Esc closes.
+func (e *editor) handleGrade(chunk []byte) {
+	specs := grade.Specs()
+	if len(chunk) >= 3 && chunk[0] == 0x1b && chunk[1] == '[' {
+		switch chunk[2] {
+		case 'A':
+			e.gradeMove(-1)
+		case 'B':
+			e.gradeMove(1)
+		case 'C':
+			e.gradeAdjust(specs, 1)
+		case 'D':
+			e.gradeAdjust(specs, -1)
+		}
+		e.drawGrade()
+		e.out.Flush()
+		return
+	}
+	for _, b := range chunk {
+		switch b {
+		case 'j':
+			e.gradeMove(1)
+		case 'k':
+			e.gradeMove(-1)
+		case 'l', '+', '=', 'L':
+			e.gradeAdjust(specs, 1)
+		case 'h', '-', 'H':
+			e.gradeAdjust(specs, -1)
+		case '0':
+			e.setGradeParam(specs[e.gradeIdx].Name, specs[e.gradeIdx].Neutral)
+		case 'r':
+			e.pushUndo()
+			human, _ := grade.SplitNote(e.items[e.cursor].Note)
+			e.items[e.cursor].Note = human
+			e.dirty = true
+			e.forceScene = true
+			e.status = "grade cleared"
+		case 0x09, 'q', 0x1b: // Tab/q/Esc: back to the editor
+			e.screen = 0
+			g := e.currentGrade()
+			if g.IsNeutral() {
+				e.status = "grade: neutral · w to save"
+			} else {
+				e.status = "grade " + g.String() + " · w to save"
+			}
+			e.redraw(true)
+			e.onSceneChange()
+			e.out.Flush()
+			return
+		}
+	}
+	e.drawGrade()
+	e.out.Flush()
+}
+
+func (e *editor) gradeMove(d int) {
+	e.gradeIdx += d
+	n := len(grade.Specs())
+	if e.gradeIdx < 0 {
+		e.gradeIdx = 0
+	}
+	if e.gradeIdx >= n {
+		e.gradeIdx = n - 1
+	}
+}
+
+// gradeAdjust steps the selected parameter. The step is 5 for the wide
+// 0..200 / -100..100 knobs, matching how the eye reads a slider.
+func (e *editor) gradeAdjust(specs []grade.Spec, dir float64) {
+	s := specs[e.gradeIdx]
+	cur := e.currentGrade().Get(s.Name)
+	e.setGradeParam(s.Name, cur+dir*5)
 }
 
 // commitGain parses the inline input as a bed gain in dB (negative is normal

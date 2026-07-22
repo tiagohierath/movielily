@@ -15,9 +15,73 @@ import (
 	"strings"
 
 	"golang.org/x/sys/unix"
+
+	"movielily/internal/grade"
 )
 
 // ---- rendering ------------------------------------------------------------
+
+// drawGrade paints the colour-grade panel: one row per parameter with a
+// slider showing its position between min and max, plus the live key=value
+// text (the exact tokens stored in the note) so the panel and the text form
+// are visibly the same thing.
+func (e *editor) drawGrade() {
+	io.WriteString(e.out, clearScreen)
+	if e.kitty {
+		kittyDeleteAll(e.out)
+	}
+	it := e.items[e.cursor]
+	g := e.currentGrade()
+	title := fmt.Sprintf(" grade · %s%s", it.File, tern(g.IsNeutral(), "  (neutral)", ""))
+	io.WriteString(e.out, moveTo(1, 1)+"\x1b[7m"+padRight(trunc(title, e.w), e.w)+"\x1b[0m")
+
+	specs := grade.Specs()
+	barW := 24
+	for i, s := range specs {
+		row := 3 + i*2
+		v := g.Get(s.Name)
+		// slider position of v within [min,max]
+		frac := (v - s.Min) / (s.Max - s.Min)
+		filled := int(frac*float64(barW) + 0.5)
+		if filled < 0 {
+			filled = 0
+		}
+		if filled > barW {
+			filled = barW
+		}
+		bar := strings.Repeat("─", filled) + "●" + strings.Repeat("─", barW-filled)
+		name := fmt.Sprintf("%-11s", s.Name)
+		val := fmt.Sprintf("%6s", num2(v))
+		neutralMark := ""
+		if v == s.Neutral {
+			neutralMark = " \x1b[2m(neutral)\x1b[0m"
+		}
+		if i == e.gradeIdx {
+			e.put(row, 2, "\x1b[7m▸ "+name+"\x1b[0m \x1b[36m"+bar+"\x1b[0m "+val+neutralMark)
+			e.put(row+1, 4, "\x1b[2m"+trunc(s.Help, e.w-6)+"\x1b[0m")
+		} else {
+			e.put(row, 2, "  \x1b[1m"+name+"\x1b[0m \x1b[2m"+bar+"\x1b[0m "+val+neutralMark)
+		}
+	}
+
+	// The live text form, exactly what lands in the note.
+	txt := g.String()
+	if txt == "" {
+		txt = "(none)"
+	}
+	e.put(e.h-2, 2, "\x1b[2mtext:\x1b[0m "+trunc(txt, e.w-8))
+	foot := " j/k pick · h/l or ←/→ adjust · 0 reset param · r clear all · Tab/q back (w saves)"
+	io.WriteString(e.out, moveTo(e.h, 1)+"\x1b[7m"+padRight(trunc(foot, e.w), e.w)+"\x1b[0m")
+}
+
+func tern(cond bool, a, b string) string {
+	if cond {
+		return a
+	}
+	return b
+}
+
+func num2(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
 
 func (e *editor) computeLayout() {
 	e.rightW = e.w * 42 / 100

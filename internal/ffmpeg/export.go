@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"movielily/internal/grade"
 	"movielily/internal/manim"
 	"movielily/internal/model"
 	"movielily/internal/project"
@@ -91,6 +92,13 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 		if abs == outAbs {
 			return fmt.Errorf("refusing to overwrite source footage %q with the export", it.File)
 		}
+		// Colour grade / film grain for this item, from its note (inline
+		// params + optional #grade:preset). Pure text, applied only here.
+		gr, err := grade.For(p.GradesDir(), it.Note)
+		if err != nil {
+			return err
+		}
+		gradeF := gr.Filter()
 		vlab, alab := fmt.Sprintf("v%d", i), fmt.Sprintf("a%d", i)
 
 		switch {
@@ -105,7 +113,7 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 			args = append(args, "-f", "lavfi", "-t", dur, "-i", "anullsrc=r=48000:cl=stereo")
 			aIdx := input
 			input++
-			fmt.Fprintf(&fc, "[%d:v]%s[%s];", vIdx, vchainFor(it, w, h, fps), vlab)
+			fmt.Fprintf(&fc, "[%d:v]%s[%s];", vIdx, vchainFor(it, w, h, fps, gradeF), vlab)
 			fmt.Fprintf(&fc, "[%d:a]%s[%s];", aIdx, achain(), alab)
 		case it.Kind == model.KindAnim:
 			// Rendered animation: silent by design (beds carry the music), so
@@ -118,7 +126,7 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 			args = append(args, "-f", "lavfi", "-t", dur, "-i", "anullsrc=r=48000:cl=stereo")
 			aIdx := input
 			input++
-			fmt.Fprintf(&fc, "[%d:v]%s[%s];", vIdx, vchainFor(it, w, h, fps), vlab)
+			fmt.Fprintf(&fc, "[%d:v]%s[%s];", vIdx, vchainFor(it, w, h, fps, gradeF), vlab)
 			fmt.Fprintf(&fc, "[%d:a]%s[%s];", aIdx, achain(), alab)
 		case model.IsAudioFile(it.File):
 			// A voice/narration segment: the sound occupies the timeline and
@@ -134,7 +142,7 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 				fmt.Sprintf("color=black:s=%dx%d:r=%d", w, h, fps))
 			vIdx := input
 			input++
-			fmt.Fprintf(&fc, "[%d:v]%s[%s];", vIdx, vchainFor(it, w, h, fps), vlab)
+			fmt.Fprintf(&fc, "[%d:v]%s[%s];", vIdx, vchainFor(it, w, h, fps, gradeF), vlab)
 			fmt.Fprintf(&fc, "[%d:a]%s[%s];", aIdx, achainClip(it), alab)
 		default: // video
 			if it.Out <= it.In {
@@ -144,7 +152,7 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 			args = append(args, "-ss", model.FormatSeconds(it.In), "-t", dur, "-i", abs)
 			idx := input
 			input++
-			fmt.Fprintf(&fc, "[%d:v]%s[%s];", idx, vchainFor(it, w, h, fps), vlab)
+			fmt.Fprintf(&fc, "[%d:v]%s[%s];", idx, vchainFor(it, w, h, fps, gradeF), vlab)
 			if model.HasTag(it.Note, "mute") || !HasAudio(abs) {
 				// #mute b-roll, or footage that simply has no audio stream:
 				// pair the picture with silence instead of a missing [i:a].
@@ -275,26 +283,39 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 	return cmd.Run()
 }
 
-// vchain scales to fit, pads to the 4:3 frame, squares pixels, fixes fps and
-// pixel format so every segment is concat-compatible.
-func vchain(w, h, fps int) string {
-	return fmt.Sprintf(
-		"scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=%d,format=yuv420p",
+// vchain scales to fit, pads to the 4:3 frame, squares pixels and fixes fps.
+// The colour-grade filter (may be empty) runs after the geometry, and the
+// pixel format is pinned last so every segment stays concat-compatible.
+func vchain(w, h, fps int, gradeF string) string {
+	base := fmt.Sprintf(
+		"scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=%d",
 		w, h, w, h, fps,
 	)
+	return withGrade(base, gradeF)
 }
 
 // vchainFor picks the item's fit. The default letterboxes (the whole picture,
 // bars if shapes differ); a #cover tag in the note fills the frame instead,
-// cropping the edges that don't fit. Same grammar as every other tag.
-func vchainFor(it model.SequenceItem, w, h, fps int) string {
+// cropping the edges that don't fit. gradeF is the item's colour grade / grain
+// (empty when neutral). Same grammar as every other tag.
+func vchainFor(it model.SequenceItem, w, h, fps int, gradeF string) string {
 	if model.HasTag(it.Note, "cover") {
-		return fmt.Sprintf(
-			"scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,setsar=1,fps=%d,format=yuv420p",
+		base := fmt.Sprintf(
+			"scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,setsar=1,fps=%d",
 			w, h, w, h, fps,
 		)
+		return withGrade(base, gradeF)
 	}
-	return vchain(w, h, fps)
+	return vchain(w, h, fps, gradeF)
+}
+
+// withGrade appends the grade filter (if any) after the geometry chain, then
+// pins the pixel format.
+func withGrade(base, gradeF string) string {
+	if gradeF != "" {
+		base += "," + gradeF
+	}
+	return base + ",format=yuv420p"
 }
 
 // ResolveOverlay turns an overlay's file into a real image: a plain image

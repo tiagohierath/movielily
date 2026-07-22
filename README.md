@@ -5,8 +5,10 @@ log the good moments, assemble a plain-text cut, watch it instantly without
 rendering, and export a YouTube-ready 4:3 file with ffmpeg.
 
 **The one rule:** your footage is never modified, moved, or renamed. mpv and
-ffmpeg only ever *read* it. Every decision is a line of text; export always
-writes a brand-new file.
+ffmpeg only ever *read* it. Every decision — every cut, effect, colour grade
+and film-grain setting — is plain text; export always writes a brand-new
+file. So **everything is reversible** (delete the text), reproducible (same
+text, same pixels) and versionable.
 
 Times are always **seconds**: `90`, `90s`, and `1:30` all mean the same thing.
 
@@ -35,6 +37,7 @@ fetched ephemerally when missing.
 | `movielily seq overlay <seq> <img|tpl.typ> <at> <dur> [--place br:33] [note]` | image, or a typst template whose text is the note (lower-thirds), on top of the LAST scene |
 | `movielily seq use <seq> <other>` | splice another sequence in (chapters edited separately) |
 | `movielily silences <audio> [--keep]` | find the spoken stretches of a narration take; --keep turns them into selects |
+| `movielily grade params/list/show/set` | manage colour-grade / film-grain presets (grades/*.grade) |
 | `movielily seq audio <seq> <file> [--gain -12] [note]` | music/narration bed under the whole cut |
 | `movielily seq show <seq>` · `seq list` | inspect sequences |
 | `movielily edit [seq]` | the interactive editor (see keys below) |
@@ -133,6 +136,8 @@ scene starts in the finished movie.
 | `j`/`k`, arrows | move · `J`/`K` reorder · `g`/`G` top/bottom · `[`/`]` prev/next section |
 | `s` | split the clip in two at a point picked in mpv |
 | `<`/`>` | nudge the clip's in point ±0.5s (`+`/`-` does the out point) |
+| `c` | colour-grade panel: live sliders for the scene's grade (see below) |
+| `Tab` | snapshot browser: pick a version, `⏎` restores it |
 | `Enter` | open the thing under the cursor in an mpv window, editor stays live: clips replay for redoing in/out (applies when you confirm), images/overlays/cards/animations/beds just open |
 | `r` / `R` | watch from here / the whole cut (simulated export in an mpv window, nothing renders) |
 | `T` / `A` | insert a title card / animated card below the cursor: pick template (last one prefilled), type text |
@@ -191,6 +196,18 @@ write one line per name/credit:
 ```bash
 movielily seq overlay corte lower.typ 0.5 4 --place full "Fulano, artista"
 ```
+
+## Colour grading & film grain
+
+Grade a scene as plain text — inline `key=value` in its note
+(`sunset saturation=120 warmth=25 grain=20`), or a reusable preset
+(`movielily grade set filmic …` + `#grade:filmic` on the note). Or use the
+TUI panel: press `c` on a scene for live sliders (`j`/`k` pick, `←`/`→`
+adjust, `0` reset one, `r` clear). The panel writes the same tokens back into
+the note, so text and TUI are one thing. Parameters: brightness, contrast,
+saturation, gamma, warmth, sharpen, grain (luma-only film grain). Applied only
+at export, never to footage — fully reversible. Full guide:
+[docs/color-grading.md](docs/color-grading.md).
 
 ## Nested sequences
 

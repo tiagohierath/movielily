@@ -46,6 +46,7 @@ const (
 	editBedGain       // bed wizard step 2: gain in dB
 	editOvlFile       // overlay wizard step 1: which image
 	editOvlSpec       // overlay wizard step 2: "at dur place"
+	editGrade         // colour grade / grain tokens for the current scene
 )
 
 type previewReq struct {
@@ -96,10 +97,16 @@ type editor struct {
 	pendingAnimText  string
 	wantAnim         bool
 
-	// snapshots tab (Tab): the git branch graph, read-only
-	screen    int // 0 = editor · 1 = snapshots
-	snapLines []string
-	snapTop   int
+	// snapshots tab (Tab): interactive commit browser
+	screen     int // 0 = editor · 1 = snapshots · 2 = grade panel
+	snaps      []snapCommit
+	snapSel    int
+	snapTop    int
+	snapBranch string
+
+	// grade panel (c on a scene, or :grade): a live slider view over the
+	// scene's colour-grade parameters. gradeIdx is the selected parameter.
+	gradeIdx int
 
 	// async redo-in/out (Enter) and split-point picks (s): mpv runs in its
 	// own window while the TUI stays live; results come back through this

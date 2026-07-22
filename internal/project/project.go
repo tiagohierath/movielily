@@ -35,6 +35,7 @@ func (p *Project) Notes() string        { return filepath.Join(p.Root, "notes.tx
 func (p *Project) Selects() string      { return filepath.Join(p.Root, "selects.txt") }
 func (p *Project) Footage() string      { return filepath.Join(p.Root, "footage") }
 func (p *Project) SequencesDir() string { return filepath.Join(p.Root, "sequences") }
+func (p *Project) GradesDir() string    { return filepath.Join(p.Root, "grades") }
 
 func (p *Project) Sequence(name string) string {
 	name = strings.TrimSuffix(filepath.Base(name), ".txt")
