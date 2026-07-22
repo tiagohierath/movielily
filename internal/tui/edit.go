@@ -56,6 +56,10 @@ const (
 	editTitleText     // title-card wizard step 2: the card's text
 	editAnimTemplate  // animated-card wizard step 1
 	editAnimText      // animated-card wizard step 2
+	editBedFile       // bed wizard step 1: which audio file
+	editBedGain       // bed wizard step 2: gain in dB
+	editOvlFile       // overlay wizard step 1: which image
+	editOvlSpec       // overlay wizard step 2: "at dur place"
 )
 
 type previewReq struct {
@@ -116,7 +120,8 @@ type editor struct {
 	reselectCh   chan reselectRes
 	reselectBusy bool
 
-	palSel int // command palette (:) selection index
+	palSel      int    // command palette (:) selection index
+	pendingFile string // first answer of the bed/overlay wizards
 
 	w, h  int
 	kitty bool
@@ -544,6 +549,8 @@ var palette = []palCmd{
 	{"watch-all", "play the whole cut in mpv (no render)", func(e *editor) bool { e.wantReview = 2; return false }},
 	{"title-card", "insert a typst title card below the cursor", func(e *editor) bool { e.startTitleCard(); return false }},
 	{"animated-card", "insert a manim animated card below the cursor", func(e *editor) bool { e.startAnimCard(); return false }},
+	{"bed", "add a music/narration bed under the whole cut", func(e *editor) bool { e.startBed(); return false }},
+	{"overlay", "put an image on top of the scene at the cursor", func(e *editor) bool { e.startOverlay(); return false }},
 	{"section", "insert a section header below the cursor", func(e *editor) bool { e.addSection(); return false }},
 	{"note", "edit the scene's note (or card text)", func(e *editor) bool { e.startEdit(); return false }},
 	{"duration", "edit the scene's duration (gain on beds)", func(e *editor) bool { e.startDurEdit(); return false }},
@@ -1054,6 +1061,18 @@ func (e *editor) commitEdit() {
 	case editAnimText:
 		e.commitAnimText()
 		return
+	case editBedFile:
+		e.commitBedFile()
+		return
+	case editBedGain:
+		e.commitBedGain()
+		return
+	case editOvlFile:
+		e.commitOvlFile()
+		return
+	case editOvlSpec:
+		e.commitOvlSpec()
+		return
 	}
 	e.pushUndo()
 	isSection := e.items[e.cursor].IsSection()
@@ -1257,6 +1276,112 @@ func (e *editor) animRenderOp(st *xterm.State) {
 }
 
 func roundCenti(f float64) float64 { return float64(int64(f*100+0.5)) / 100 }
+
+// pendingFile carries the first wizard answer between the two prompts of the
+// bed and overlay wizards.
+func (e *editor) startBed() {
+	e.mode = modeEdit
+	e.editWhat = editBedFile
+	e.inputBytes = nil
+	e.status = "music/narration file from footage/ (e.g. musica.mp3)"
+}
+
+func (e *editor) commitBedFile() {
+	name := strings.TrimSpace(string(e.inputBytes))
+	if _, err := e.p.ResolveFootage(name); err != nil {
+		e.status = err.Error()
+		e.inputBytes = nil // stay in the prompt
+		return
+	}
+	e.pendingFile = e.p.StoreName(name)
+	e.editWhat = editBedGain
+	e.inputBytes = []byte("-12")
+}
+
+func (e *editor) commitBedGain() {
+	db, err := model.ParseSeconds(string(e.inputBytes))
+	e.mode = modeNormal
+	e.editWhat = editNote
+	e.inputBytes = nil
+	if err != nil {
+		e.status = "bed cancelled (gain must be dB, e.g. -12)"
+		return
+	}
+	e.pushUndo()
+	e.items = append(e.items, model.SequenceItem{Kind: model.KindAudio, File: e.pendingFile, Gain: db})
+	e.cursor = len(e.items) - 1
+	e.dirty = true
+	e.forceScene = true
+	e.status = fmt.Sprintf("bed %s at %sdB · tags place it: #at_ #from_ #for_ #duck (e edits) · w to save", e.pendingFile, trimf(db))
+}
+
+func (e *editor) startOverlay() {
+	// An overlay rides the scene above it, so it needs one to ride.
+	ok := false
+	for i := 0; i <= e.cursor && i < len(e.items); i++ {
+		it := e.items[i]
+		if !it.IsSection() && !it.IsAudio() && !it.IsOverlay() {
+			ok = true
+		}
+	}
+	if !ok {
+		e.status = "overlays ride a scene: move the cursor onto/below one first"
+		return
+	}
+	e.mode = modeEdit
+	e.editWhat = editOvlFile
+	e.inputBytes = nil
+	e.status = "overlay image from footage/ (png keeps transparency)"
+}
+
+func (e *editor) commitOvlFile() {
+	name := strings.TrimSpace(string(e.inputBytes))
+	if _, err := e.p.ResolveFootage(name); err != nil {
+		e.status = err.Error()
+		e.inputBytes = nil // stay in the prompt
+		return
+	}
+	e.pendingFile = e.p.StoreName(name)
+	e.editWhat = editOvlSpec
+	e.inputBytes = []byte("0 0 " + model.DefaultPlace)
+}
+
+// commitOvlSpec parses "at dur place" (dur 0 = until the scene ends) and
+// inserts the overlay below the cursor so it rides the scene above.
+func (e *editor) commitOvlSpec() {
+	fields := strings.Fields(string(e.inputBytes))
+	e.mode = modeNormal
+	e.editWhat = editNote
+	e.inputBytes = nil
+	if len(fields) < 2 {
+		e.status = "overlay cancelled (want: at dur [place], e.g. 2 5 tr:30)"
+		return
+	}
+	at, err1 := model.ParseSeconds(fields[0])
+	dur, err2 := model.ParseSeconds(fields[1])
+	place := model.DefaultPlace
+	if len(fields) > 2 {
+		place = fields[2]
+	}
+	if _, _, err := model.ParsePlace(place); err1 != nil || err2 != nil || err != nil {
+		e.status = "overlay cancelled (want: at dur [place], e.g. 2 5 tr:30)"
+		return
+	}
+	e.pushUndo()
+	at2 := e.cursor + 1
+	if at2 > len(e.items) {
+		at2 = len(e.items)
+	}
+	it := model.SequenceItem{Kind: model.KindOverlay, File: e.pendingFile, In: at, Dur: dur, Place: place}
+	e.items = append(e.items, model.SequenceItem{})
+	copy(e.items[at2+1:], e.items[at2:])
+	e.items[at2] = it
+	e.cursor = at2
+	e.marked = map[int]bool{}
+	e.dirty = true
+	e.forceScene = true
+	e.status = fmt.Sprintf("overlay %s riding the scene above (+%ss for %ss @ %s) · w to save", it.File, trimf(at), trimf(dur), place)
+}
 
 // ---- watch the cut (r / R) -------------------------------------------------
 
@@ -1875,6 +2000,14 @@ func (e *editor) drawFooter() {
 			label = "anim template (Enter accepts)"
 		case editAnimText:
 			label = "anim text"
+		case editBedFile:
+			label = "bed audio file"
+		case editBedGain:
+			label = "bed gain (dB)"
+		case editOvlFile:
+			label = "overlay image"
+		case editOvlSpec:
+			label = "overlay: at dur [place]"
 		default:
 			if len(e.items) > 0 && e.items[e.cursor].IsSection() {
 				label = "title"

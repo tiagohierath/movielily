@@ -143,6 +143,39 @@ func HasTag(note, name string) bool {
 	return false
 }
 
+var gainTagRe = regexp.MustCompile(`^#([+-]?[0-9]+(?:\.[0-9]+)?)db$`)
+
+// GainTag finds a per-item gain tag in a note: #-6db, #+3db, #2.5db. Used on
+// clips to pull one loud take down (or a quiet one up) without touching the
+// rest of the cut.
+func GainTag(note string) (float64, bool) {
+	for _, t := range Tags(note) {
+		if m := gainTagRe.FindStringSubmatch(t); m != nil {
+			v, err := strconv.ParseFloat(m[1], 64)
+			if err == nil {
+				return v, true
+			}
+		}
+	}
+	return 0, false
+}
+
+// TagNumber finds #<name>_<seconds> in a note (e.g. #at_12, #from_45.5) and
+// returns its value. Beds use these for placement: #at_S starts the bed S
+// seconds into the film, #from_S skips into the source, #for_S bounds how
+// long it plays.
+func TagNumber(note, name string) (float64, bool) {
+	prefix := "#" + name + "_"
+	for _, t := range Tags(note) {
+		if strings.HasPrefix(t, prefix) {
+			if v, err := strconv.ParseFloat(t[len(prefix):], 64); err == nil {
+				return v, true
+			}
+		}
+	}
+	return 0, false
+}
+
 // IsAudioFile reports whether a media reference is a pure audio file (a voice
 // recording, music). Such files can sit in the timeline as `video|` items: the
 // sound occupies the slot and the picture is a black canvas to decorate with

@@ -2,6 +2,7 @@ package mpv
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -145,6 +146,67 @@ func TestReviewArgsNoBeds(t *testing.T) {
 	for _, a := range args {
 		if strings.HasPrefix(a, "--lavfi-complex=") || strings.HasPrefix(a, "--audio-file=") {
 			t.Errorf("unexpected audio arg without beds: %s", a)
+		}
+	}
+}
+
+// Gain tags, mute windows, bed placement and overlays all reshape the review
+// graph; mpv itself validates the syntax when available.
+func TestReviewArgsEssayFeatures(t *testing.T) {
+	p := testProject(t, "a.mp4", "b.mp4", "ref.png", "song.mp3")
+	items := []model.SequenceItem{
+		{Kind: model.KindVideo, File: "a.mp4", In: 0, Out: 2, Note: "loud #-6db"},
+		{Kind: model.KindOverlay, File: "ref.png", In: 0.5, Dur: 1, Place: "tr:30"},
+		{Kind: model.KindVideo, File: "b.mp4", In: 0, Out: 2, Note: "broll #mute"},
+		{Kind: model.KindAudio, File: "song.mp3", Gain: -12, Note: "#at_1 #from_30 #for_2"},
+	}
+	args, _, _, _, err := reviewArgs(p, "cut", items, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := find(t, args, "--lavfi-complex=")
+	for _, want := range []string{
+		"volume=-6dB:enable='between(t,0,2)'",                                       // gain tag window
+		"volume=0:enable='between(t,2,4)'",                                          // mute window
+		"[vid1]scale=1440:1080",                                                     // framing inside the graph
+		"overlay=x=main_w-overlay_w-24:y=24:enable='between(t,0.5,1.5)'",            // composited overlay
+		"atrim=start=30:end=32,asetpts=PTS-STARTPTS,adelay=1000:all=1,volume=-12dB", // bed placement
+		"null[vo]",
+	} {
+		if !strings.Contains(g, want) {
+			t.Errorf("graph missing %q:\n%s", want, g)
+		}
+	}
+	find(t, args, "--external-file=")
+	for _, a := range args {
+		if strings.HasPrefix(a, "--vf=") {
+			t.Errorf("plain --vf should be absent when overlays join the graph: %s", a)
+		}
+	}
+}
+
+// The generated graphs must be syntactically valid for real mpv, not just for
+// our expectations. Empty files decode as nothing, so force a quick exit; a
+// graph parse error still fails the run.
+func TestReviewArgsAcceptedByMpv(t *testing.T) {
+	if _, err := exec.LookPath("mpv"); err != nil {
+		t.Skip("mpv not installed")
+	}
+	p := testProject(t, "a.mp4", "ref.png", "song.mp3")
+	items := []model.SequenceItem{
+		{Kind: model.KindVideo, File: "a.mp4", In: 0, Out: 1, Note: "#-3db"},
+		{Kind: model.KindOverlay, File: "ref.png", In: 0, Dur: 1, Place: "br:25"},
+		{Kind: model.KindAudio, File: "song.mp3", Gain: -10, Note: "#at_0.5"},
+	}
+	args, _, _, _, err := reviewArgs(p, "cut", items, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args = append(args, "--no-config", "--vo=null", "--ao=null", "--frames=1", "--end=0.1")
+	out, _ := exec.Command("mpv", args...).CombinedOutput()
+	for _, bad := range []string{"error parsing", "Cannot create filter", "Invalid", "failed to configure"} {
+		if strings.Contains(strings.ToLower(string(out)), strings.ToLower(bad)) {
+			t.Fatalf("mpv rejected the graph: %s\nargs: %v", out, args)
 		}
 	}
 }

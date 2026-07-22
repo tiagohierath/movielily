@@ -48,7 +48,7 @@ func parseClock(s string) (float64, error) {
 	return total, nil
 }
 
-var tagRe = regexp.MustCompile(`#[\p{L}\p{N}_\-]+`)
+var tagRe = regexp.MustCompile(`#[\p{L}\p{N}_\-+.]+`)
 
 // Tags extracts #hashtags from free text, lower-cased and de-duplicated,
 // preserving first-seen order. Tags are how footage is labelled (#best #funny).

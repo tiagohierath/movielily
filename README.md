@@ -69,7 +69,14 @@ colours them. Three tags are also switches:
 
 - `#cover` on a visual item: fill the frame (crop) instead of letterboxing;
 - `#mute` on a clip: silence its own sound (b-roll riding over narration);
-- `#duck` on a bed: sidechain-duck the music under the timeline's voice.
+- `#-6db` / `#+3db` on a clip: adjust just that clip's level;
+- `#duck` on a bed: sidechain-duck the music under the timeline's voice;
+- `#at_S` `#from_S` `#for_S` on a bed: enter the film at second S, skip S
+  seconds into the source, play for S seconds (music per section instead of
+  wall to wall).
+
+Clips whose file has no audio stream at all (some screen captures) export
+with silence automatically instead of failing.
 
 ## Workflows
 
@@ -128,7 +135,7 @@ scene starts in the finished movie.
 | `u` / `Ctrl-R` | undo / redo |
 | `o` | new section · `v` open the file in vim and reload on quit |
 | `Tab` | snapshots tab: the git branch graph, scroll with `j`/`k`, `Tab` back |
-| `:` | command palette: fuzzy-search every command by name (`wat` finds `watch`/`watch-all`), Tab/Ctrl-n cycles, Enter runs |
+| `:` | command palette: fuzzy-search every command by name (`wat` finds `watch`/`watch-all`), Tab/Ctrl-n cycles, Enter runs; `bed` and `overlay` there are two-step wizards that insert those records |
 | `w` | save · `q`/`Q` quit saving/discarding · `?` help overlay |
 
 `MOVIELILY_EDITOR` overrides vim (e.g. `MOVIELILY_EDITOR="vim -u NONE"`).
@@ -184,9 +191,10 @@ movielily review filme --from 5     # start at scene 5 (seq show numbering)
 
 Instant, full resolution: mpv plays the exact cut through a generated
 playlist, with stills held for their duration, cards rendered, voice slices
-audible, beds mixed at their gain and offset, and the picture letterboxed
-into the project frame. Only overlays are export-only. In the TUI, `r`/`R` do
-the same in a separate window.
+audible, overlays composited in place, `#mute`/`#NdB` windows applied, beds
+mixed at their gain and placement, and the picture letterboxed into the
+project frame. In the TUI, `r`/`R` do the same in a separate window. (Only
+the export's finishing pass, fades/ducking/loudnorm, is not simulated.)
 
 ## export: the real render
 

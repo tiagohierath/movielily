@@ -158,7 +158,8 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 			vIdx := input
 			input++
 			fmt.Fprintf(&fc, "[%d:v]%s[%s];", vIdx, vchainFor(it, w, h, fps), vlab)
-			fmt.Fprintf(&fc, "[%d:a]%s[%s];", aIdx, achainClip(it.Duration()), alab)
+			gain, _ := model.GainTag(it.Note)
+			fmt.Fprintf(&fc, "[%d:a]%s[%s];", aIdx, achainClip(it.Duration(), gain), alab)
 		default: // video
 			if it.Out <= it.In {
 				return fmt.Errorf("clip %q has out (%s) <= in (%s)", it.File, model.FormatSeconds(it.Out), model.FormatSeconds(it.In))
@@ -168,15 +169,16 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 			idx := input
 			input++
 			fmt.Fprintf(&fc, "[%d:v]%s[%s];", idx, vchainFor(it, w, h, fps), vlab)
-			if model.HasTag(it.Note, "mute") {
-				// #mute: b-roll. The clip's own sound is replaced by silence
-				// so it can ride over a narration bed.
+			if model.HasTag(it.Note, "mute") || !HasAudio(abs) {
+				// #mute b-roll, or footage that simply has no audio stream:
+				// pair the picture with silence instead of a missing [i:a].
 				args = append(args, "-f", "lavfi", "-t", dur, "-i", "anullsrc=r=48000:cl=stereo")
 				aIdx := input
 				input++
 				fmt.Fprintf(&fc, "[%d:a]%s[%s];", aIdx, achain(), alab)
 			} else {
-				fmt.Fprintf(&fc, "[%d:a]%s[%s];", idx, achainClip(it.Duration()), alab)
+				gain, _ := model.GainTag(it.Note)
+				fmt.Fprintf(&fc, "[%d:a]%s[%s];", idx, achainClip(it.Duration(), gain), alab)
 			}
 		}
 		vlabels = append(vlabels, "["+vlab+"]")
@@ -228,10 +230,6 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 	// keeps the timeline at full level instead of averaging it down.
 	audioOut := "[outa]"
 	if len(beds) > 0 {
-		bedFade := ""
-		if total > 3 {
-			bedFade = fmt.Sprintf(",afade=t=out:st=%s:d=1.5", model.FormatSeconds(total-1.5))
-		}
 		var plain, ducked []string
 		for i, bed := range beds {
 			abs, err := p.ResolveFootage(bed.File)
@@ -243,7 +241,7 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 			}
 			args = append(args, "-i", abs)
 			lab := fmt.Sprintf("[bed%d]", i)
-			fmt.Fprintf(&fc, ";[%d:a]%s,volume=%sdB%s%s", input, achain(), model.FormatSeconds(bed.Gain), bedFade, lab)
+			fmt.Fprintf(&fc, ";[%d:a]%s%s", input, bedChain(bed, total), lab)
 			input++
 			if model.HasTag(bed.Note, "duck") {
 				ducked = append(ducked, lab)
@@ -354,13 +352,63 @@ func achain() string {
 	return "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo"
 }
 
+// bedChain builds one bed's filter chain: placement tags (#from_S skips into
+// the source, #at_S delays entry into the film, #for_S bounds how long it
+// plays), the bed's gain, and a 1.5s fade-out where it ends (its own #for_
+// end, or the end of the film).
+func bedChain(bed model.SequenceItem, total float64) string {
+	chain := achain()
+	from, _ := model.TagNumber(bed.Note, "from")
+	at, _ := model.TagNumber(bed.Note, "at")
+	forDur, hasFor := model.TagNumber(bed.Note, "for")
+	if hasFor && forDur > 0 {
+		chain += fmt.Sprintf(",atrim=start=%s:end=%s,asetpts=PTS-STARTPTS",
+			model.FormatSeconds(from), model.FormatSeconds(from+forDur))
+	} else if from > 0 {
+		chain += fmt.Sprintf(",atrim=start=%s,asetpts=PTS-STARTPTS", model.FormatSeconds(from))
+	}
+	if at > 0 {
+		chain += fmt.Sprintf(",adelay=%d:all=1", int(at*1000))
+	}
+	chain += fmt.Sprintf(",volume=%sdB", model.FormatSeconds(bed.Gain))
+	end := total
+	if hasFor && forDur > 0 && at+forDur < end {
+		end = at + forDur
+	}
+	if end > 3 {
+		chain += fmt.Sprintf(",afade=t=out:st=%s:d=1.5", model.FormatSeconds(end-1.5))
+	}
+	return chain
+}
+
 // achainClip is achain plus ~15ms micro-fades at both ends, so joins between
-// scenes can never click or pop. Too-short clips skip the fades.
-func achainClip(dur float64) string {
+// scenes can never click or pop, plus the item's #NdB gain tag if it has
+// one. Too-short clips skip the fades.
+func achainClip(dur, gainDB float64) string {
 	const f = 0.015
+	chain := achain()
+	if gainDB != 0 {
+		chain += fmt.Sprintf(",volume=%sdB", model.FormatSeconds(gainDB))
+	}
 	if dur <= 4*f {
-		return achain()
+		return chain
 	}
 	return fmt.Sprintf("%s,afade=t=in:st=0:d=%g,afade=t=out:st=%s:d=%g",
-		achain(), f, model.FormatSeconds(dur-f), f)
+		chain, f, model.FormatSeconds(dur-f), f)
+}
+
+// HasAudio reports whether the file carries an audio stream. Real-world
+// footage (screen captures, some phone clips) sometimes has none; the export
+// substitutes silence instead of failing on a missing [i:a].
+func HasAudio(path string) bool {
+	out, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "a",
+		"-show_entries", "stream=codec_type", "-of", "csv=p=0", path).Output()
+	return err == nil && strings.TrimSpace(string(out)) != ""
+}
+
+// OverlayScalePos sizes an overlay to pct% of the frame width (aspect kept)
+// and anchors it: corners inset by a margin, c centered, full fitted whole.
+// Shared by the export graph and the review simulation.
+func OverlayScalePos(corner string, pct, w, h int) (scale, pos string) {
+	return overlayScalePos(corner, pct, w, h)
 }

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"movielily/internal/ffmpeg"
 	"movielily/internal/manim"
 	"movielily/internal/model"
 	"movielily/internal/project"
@@ -99,29 +100,107 @@ func reviewArgs(p *project.Project, name string, items []model.SequenceItem, fro
 	}
 
 	w, h := p.Config.Width, p.Config.Height
+	frameChain := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1", w, h, w, h)
 	args = []string{
 		path,
 		"--force-media-title=movielily review · " + name,
-		// The export's own framing: fit, letterbox, square pixels.
-		fmt.Sprintf("--vf=lavfi=[scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1]", w, h, w, h),
 	}
 
-	// #mute clips are silent in the export; silence the same timeline windows
-	// here so review sounds like the real thing.
-	var muteWins []string
+	// Per-clip audio corrections, applied to the same timeline windows the
+	// export would touch: #mute clips are silenced, #NdB gain tags applied.
+	// Overlays are bound to their scene exactly like the export binds them.
+	type volWin struct {
+		db         float64 // 0 with muted=true means silence
+		muted      bool
+		start, end float64
+	}
+	type rOverlay struct {
+		file       string
+		place      string
+		start, end float64
+	}
+	var vols []volWin
+	var rovls []rOverlay
 	{
-		o := 0.0
+		o, lastStart, lastDur := 0.0, 0.0, 0.0
+		havePlayable := false
 		for _, it := range items[from:] {
-			if it.Kind == model.KindVideo && !model.IsAudioFile(it.File) && model.HasTag(it.Note, "mute") {
-				muteWins = append(muteWins, fmt.Sprintf("between(t,%s,%s)",
-					model.FormatSeconds(o), model.FormatSeconds(o+it.Duration())))
+			switch {
+			case it.IsOverlay():
+				if !havePlayable {
+					continue
+				}
+				s := lastStart + it.In
+				e := s + it.Dur
+				if it.Dur <= 0 || e > lastStart+lastDur {
+					e = lastStart + lastDur
+				}
+				if s < e {
+					rovls = append(rovls, rOverlay{file: it.File, place: it.Place, start: s, end: e})
+				}
+			case it.Kind == model.KindVideo && !model.IsAudioFile(it.File) && model.HasTag(it.Note, "mute"):
+				vols = append(vols, volWin{muted: true, start: o, end: o + it.Duration()})
+			case it.Kind == model.KindVideo:
+				if db, ok := model.GainTag(it.Note); ok && db != 0 {
+					vols = append(vols, volWin{db: db, start: o, end: o + it.Duration()})
+				}
 			}
-			o += it.Duration()
+			if !it.IsSection() && !it.IsAudio() && !it.IsOverlay() {
+				lastStart, lastDur, havePlayable = o, it.Duration(), true
+				o += it.Duration()
+			}
 		}
 	}
 	muteChain := ""
-	if len(muteWins) > 0 {
-		muteChain = fmt.Sprintf("volume=0:enable='%s',", strings.Join(muteWins, "+"))
+	{
+		var muteWins []string
+		for _, v := range vols {
+			win := fmt.Sprintf("between(t,%s,%s)", model.FormatSeconds(v.start), model.FormatSeconds(v.end))
+			if v.muted {
+				muteWins = append(muteWins, win)
+			} else {
+				muteChain += fmt.Sprintf("volume=%sdB:enable='%s',", model.FormatSeconds(v.db), win)
+			}
+		}
+		if len(muteWins) > 0 {
+			muteChain += fmt.Sprintf("volume=0:enable='%s',", strings.Join(muteWins, "+"))
+		}
+	}
+
+	// Video: no overlays -> plain --vf framing; with overlays the framing and
+	// the composites live in the filter graph, so review shows them too.
+	var vg strings.Builder
+	if len(rovls) > 0 {
+		fmt.Fprintf(&vg, "[vid1]%s[rbase]", frameChain)
+		cur := "[rbase]"
+		for i, ov := range rovls {
+			abs, e := p.ResolveFootage(ov.file)
+			if e != nil {
+				return nil, 0, 0, 0, e
+			}
+			args = append(args, "--external-file="+abs)
+			corner, pct, e := model.ParsePlace(ov.place)
+			if e != nil {
+				return nil, 0, 0, 0, e
+			}
+			scale, pos := ffmpeg.OverlayScalePos(corner, pct, w, h)
+			fmt.Fprintf(&vg, ";[vid%d]%s[rov%d];%s[rov%d]overlay=%s:enable='between(t,%s,%s)'[rv%d]",
+				2+i, scale, i, cur, i, pos,
+				model.FormatSeconds(ov.start), model.FormatSeconds(ov.end), i)
+			cur = fmt.Sprintf("[rv%d]", i)
+		}
+		fmt.Fprintf(&vg, ";%snull[vo]", cur)
+	} else {
+		args = append(args, "--vf=lavfi=["+frameChain+"]")
+	}
+	joinGraphs := func(audio string) string {
+		if vg.Len() == 0 {
+			return audio
+		}
+		if audio == "" {
+			return vg.String()
+		}
+		return vg.String() + ";" + audio
 	}
 
 	var bedItems []model.SequenceItem
@@ -132,8 +211,12 @@ func reviewArgs(p *project.Project, name string, items []model.SequenceItem, fro
 	}
 	beds = len(bedItems)
 	if beds == 0 {
+		audio := ""
 		if muteChain != "" && clips > 0 {
-			args = append(args, "--lavfi-complex=[aid1]"+strings.TrimSuffix(muteChain, ",")+"[ao]")
+			audio = "[aid1]" + strings.TrimSuffix(muteChain, ",") + "[ao]"
+		}
+		if g := joinGraphs(audio); g != "" {
+			args = append(args, "--lavfi-complex="+g)
 		}
 		return args, clips, stills, 0, nil
 	}
@@ -149,12 +232,35 @@ func reviewArgs(p *project.Project, name string, items []model.SequenceItem, fro
 		args = append(args, "--audio-file="+abs)
 	}
 
-	// A bed's slice for this playback: skip what the timeline skipped, rebase
-	// to 0, set its level.
+	// A bed's slice for this playback: honour its placement tags (#at_/
+	// #from_/#for_), then subtract whatever the timeline skipped by starting
+	// at `from`, rebase to 0, set its level.
 	bedChain := func(bed model.SequenceItem) string {
+		bFrom, _ := model.TagNumber(bed.Note, "from")
+		bAt, _ := model.TagNumber(bed.Note, "at")
+		bFor, hasFor := model.TagNumber(bed.Note, "for")
+		effAt := bAt - offset
+		if effAt < 0 {
+			consumed := -effAt
+			bFrom += consumed
+			if hasFor {
+				bFor -= consumed
+				if bFor <= 0 {
+					return "volume=0" // this bed already finished before here
+				}
+			}
+			effAt = 0
+		}
 		chain := ""
-		if offset > 0 {
-			chain = fmt.Sprintf("atrim=start=%s,asetpts=PTS-STARTPTS,", model.FormatSeconds(offset))
+		switch {
+		case hasFor && bFor > 0:
+			chain = fmt.Sprintf("atrim=start=%s:end=%s,asetpts=PTS-STARTPTS,",
+				model.FormatSeconds(bFrom), model.FormatSeconds(bFrom+bFor))
+		case bFrom > 0:
+			chain = fmt.Sprintf("atrim=start=%s,asetpts=PTS-STARTPTS,", model.FormatSeconds(bFrom))
+		}
+		if effAt > 0 {
+			chain += fmt.Sprintf("adelay=%d:all=1,", int(effAt*1000))
 		}
 		return chain + fmt.Sprintf("volume=%sdB", model.FormatSeconds(bed.Gain))
 	}
@@ -187,7 +293,7 @@ func reviewArgs(p *project.Project, name string, items []model.SequenceItem, fro
 		}
 		args = append(args, "--end="+model.FormatSeconds(remaining))
 	}
-	args = append(args, "--lavfi-complex="+g.String())
+	args = append(args, "--lavfi-complex="+joinGraphs(g.String()))
 	return args, clips, stills, beds, nil
 }
 
