@@ -139,34 +139,66 @@ func (e *editor) snapMove(d int) {
 	}
 }
 
-// snapRestore checks the selected snapshot's files out over the working tree,
-// after snapshotting the current state so it is itself reversible. It never
-// touches footage (footage/ is gitignored).
+// snapRestore loads THIS sequence as it was in the selected snapshot into the
+// editing buffer, as an unsaved change. It reads the file's content from the
+// commit with `git show` and never modifies the working tree or any other
+// file, so it is non-destructive and undoable: press w to keep it, u to undo,
+// or open another snapshot. (Whole-project rollback stays on the CLI.)
 func (e *editor) snapRestore() {
 	if e.snapSel < 0 || e.snapSel >= len(e.snaps) {
 		return
 	}
 	ref := e.snaps[e.snapSel].hash
-	if e.dirty {
-		_ = e.save() // don't lose unsaved edits before git rewrites the files
+	rel, err := filepath.Rel(e.p.Root, e.path)
+	if err != nil {
+		e.status = "restore: " + err.Error()
+		e.screen = 0
+		e.redraw(true)
+		e.out.Flush()
+		return
 	}
-	gitOut(e.p.Root, "stash", "push", "-u", "-m", "movielily: before restoring "+ref)
-	if out := gitOut(e.p.Root, "checkout", ref, "--", "."); true {
-		_ = out
-	}
-	// Reload the (possibly changed) sequence from disk.
-	if items, err := store.LoadSequence(e.path); err == nil {
-		e.items = items
-		e.marked = map[int]bool{}
-		e.undo, e.redoStack = nil, nil
-		e.dirty = true // the restore is an unsaved change until w
-		e.clampCursor()
-	}
+	data := gitOutBytes(e.p.Root, "show", ref+":"+filepath.ToSlash(rel))
 	e.screen = 0
-	e.status = "restored snapshot " + ref + " · w to keep · u… no, use Tab→snapshots to jump back"
+	if data == nil {
+		e.status = fmt.Sprintf("this sequence did not exist in snapshot %s", ref)
+		e.redraw(true)
+		e.onSceneChange()
+		e.out.Flush()
+		return
+	}
+	tmp := filepath.Join(e.tmpDir, "restore.txt")
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		e.status = "restore: " + err.Error()
+		e.redraw(true)
+		e.out.Flush()
+		return
+	}
+	items, err := store.LoadSequence(tmp)
+	if err != nil {
+		e.status = "restore: " + err.Error()
+		e.redraw(true)
+		e.out.Flush()
+		return
+	}
+	e.pushUndo() // undoable
+	e.items = items
+	e.marked = map[int]bool{}
+	e.clampCursor()
+	e.dirty = true
+	e.status = fmt.Sprintf("loaded %s from snapshot %s · w to keep · u to undo", rel, ref)
 	e.redraw(true)
 	e.onSceneChange()
 	e.out.Flush()
+}
+
+// gitOutBytes runs git and returns raw stdout (nil on error) — used for file
+// content, where trimming would corrupt it.
+func gitOutBytes(root string, args ...string) []byte {
+	out, err := exec.Command("git", append([]string{"-C", root}, args...)...).Output()
+	if err != nil {
+		return nil
+	}
+	return out
 }
 
 func (e *editor) drawSnapshots() {

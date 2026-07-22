@@ -12,15 +12,30 @@ numbers; the ffmpeg filters are generated, never typed.
 
 | parameter | range | neutral | effect |
 |---|---|---|---|
-| `brightness` | -100 … 100 | 0 | darker / brighter |
+| `brightness` (alias `exposure`) | -100 … 100 | 0 | darker / brighter |
 | `contrast` | 0 … 200 | 100 | flat / punchy |
+| `temperature` (alias `warmth`) | -100 … 100 | 0 | cool-blue / warm-orange |
+| `tint` | -100 … 100 | 0 | green / magenta |
+| `highlights` | -100 … 100 | 0 | recover / brighten the bright end |
+| `shadows` | -100 … 100 | 0 | deepen / lift the dark end |
 | `saturation` | 0 … 200 | 100 | grey / vivid |
-| `gamma` | 1 … 300 | 100 | midtone lift |
-| `warmth` | -100 … 100 | 0 | cool-blue / warm-orange |
-| `sharpen` | 0 … 100 | 0 | none / crisp |
+| `vibrance` | -100 … 100 | 0 | smart saturation (spares already-saturated colours) |
+| `blackpoint` | -100 … 100 | 0 | crush / lift the blacks |
+| `whitepoint` | -100 … 100 | 0 | dim / (clips at pure) whites |
 | `grain` | 0 … 100 | 0 | clean / heavy film grain (luma only, temporal) |
+| `bloom` (alias `glow`) | 0 … 100 | 0 | glow bleeding from the highlights |
+| `sharpen` | 0 … 100 | 0 | none / crisp |
+| `vignette` | 0 … 100 | 0 | darken toward the corners |
+| `fade` (alias `lift`) | 0 … 100 | 0 | lift blacks to grey (matte look) |
 
-Run `movielily grade params` for this list at any time.
+Run `movielily grade params` for this list at any time. Common short aliases
+work too (`sat`, `temp`, `hi`, `sh`, `vig`, `bp`, `wp`, `noise` = grain).
+
+Under the hood these compile to one ffmpeg chain: `eq` (exposure/contrast/
+saturation), `colortemperature`, `colorbalance` (tint), a `curves` built from
+the tonal knobs (highlights/shadows/black/white/fade), `vibrance`, `unsharp`,
+`vignette`, luma `noise`, and — for bloom — a `split`/`gblur`/`blend` glow
+sub-graph. A neutral grade adds no filter at all.
 
 ## Two ways to grade a scene — both plain text
 

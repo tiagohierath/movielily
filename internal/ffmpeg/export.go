@@ -98,8 +98,13 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 		if err != nil {
 			return err
 		}
-		gradeF := gr.Filter()
 		vlab, alab := fmt.Sprintf("v%d", i), fmt.Sprintf("a%d", i)
+		// The full [in:v] → [vlab] video segment (geometry + grade + optional
+		// bloom sub-graph). vseg records it; the branches below only add the
+		// matching audio, so grading is identical across all footage kinds.
+		vseg := func(vIdx int) {
+			fc.WriteString(videoSegment(fmt.Sprintf("%d:v", vIdx), vlab, it, w, h, fps, gr, i) + ";")
+		}
 
 		switch {
 		case it.Kind == model.KindImage || it.Kind == model.KindTitle:
@@ -113,7 +118,7 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 			args = append(args, "-f", "lavfi", "-t", dur, "-i", "anullsrc=r=48000:cl=stereo")
 			aIdx := input
 			input++
-			fmt.Fprintf(&fc, "[%d:v]%s[%s];", vIdx, vchainFor(it, w, h, fps, gradeF), vlab)
+			vseg(vIdx)
 			fmt.Fprintf(&fc, "[%d:a]%s[%s];", aIdx, achain(), alab)
 		case it.Kind == model.KindAnim:
 			// Rendered animation: silent by design (beds carry the music), so
@@ -126,7 +131,7 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 			args = append(args, "-f", "lavfi", "-t", dur, "-i", "anullsrc=r=48000:cl=stereo")
 			aIdx := input
 			input++
-			fmt.Fprintf(&fc, "[%d:v]%s[%s];", vIdx, vchainFor(it, w, h, fps, gradeF), vlab)
+			vseg(vIdx)
 			fmt.Fprintf(&fc, "[%d:a]%s[%s];", aIdx, achain(), alab)
 		case model.IsAudioFile(it.File):
 			// A voice/narration segment: the sound occupies the timeline and
@@ -142,7 +147,7 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 				fmt.Sprintf("color=black:s=%dx%d:r=%d", w, h, fps))
 			vIdx := input
 			input++
-			fmt.Fprintf(&fc, "[%d:v]%s[%s];", vIdx, vchainFor(it, w, h, fps, gradeF), vlab)
+			vseg(vIdx)
 			fmt.Fprintf(&fc, "[%d:a]%s[%s];", aIdx, achainClip(it), alab)
 		default: // video
 			if it.Out <= it.In {
@@ -152,7 +157,7 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 			args = append(args, "-ss", model.FormatSeconds(it.In), "-t", dur, "-i", abs)
 			idx := input
 			input++
-			fmt.Fprintf(&fc, "[%d:v]%s[%s];", idx, vchainFor(it, w, h, fps, gradeF), vlab)
+			vseg(idx)
 			if model.HasTag(it.Note, "mute") || !HasAudio(abs) {
 				// #mute b-roll, or footage that simply has no audio stream:
 				// pair the picture with silence instead of a missing [i:a].
@@ -283,39 +288,43 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 	return cmd.Run()
 }
 
-// vchain scales to fit, pads to the 4:3 frame, squares pixels and fixes fps.
-// The colour-grade filter (may be empty) runs after the geometry, and the
-// pixel format is pinned last so every segment stays concat-compatible.
-func vchain(w, h, fps int, gradeF string) string {
-	base := fmt.Sprintf(
-		"scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=%d",
-		w, h, w, h, fps,
-	)
-	return withGrade(base, gradeF)
-}
-
-// vchainFor picks the item's fit. The default letterboxes (the whole picture,
-// bars if shapes differ); a #cover tag in the note fills the frame instead,
-// cropping the edges that don't fit. gradeF is the item's colour grade / grain
-// (empty when neutral). Same grammar as every other tag.
-func vchainFor(it model.SequenceItem, w, h, fps int, gradeF string) string {
+// geometryChain fits the item into the 4:3 frame, squares pixels and fixes
+// fps (no trailing format). The default letterboxes; a #cover tag fills the
+// frame instead, cropping the edges that don't fit.
+func geometryChain(it model.SequenceItem, w, h, fps int) string {
 	if model.HasTag(it.Note, "cover") {
-		base := fmt.Sprintf(
+		return fmt.Sprintf(
 			"scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,setsar=1,fps=%d",
-			w, h, w, h, fps,
-		)
-		return withGrade(base, gradeF)
+			w, h, w, h, fps)
 	}
-	return vchain(w, h, fps, gradeF)
+	return fmt.Sprintf(
+		"scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=%d",
+		w, h, w, h, fps)
 }
 
-// withGrade appends the grade filter (if any) after the geometry chain, then
-// pins the pixel format.
-func withGrade(base, gradeF string) string {
-	if gradeF != "" {
-		base += "," + gradeF
+// videoSegment builds the whole "[inPad] … [outPad]" video graph for one
+// scene: geometry, then the colour grade (a linear chain), then bloom if set
+// (a split/blend sub-graph), then the pinned pixel format. idx makes the bloom
+// sub-graph's intermediate pad names unique per scene. A neutral grade yields
+// exactly the old geometry-only segment, so ungraded exports are unchanged.
+func videoSegment(inPad, outPad string, it model.SequenceItem, w, h, fps int, gr *grade.Grade, idx int) string {
+	chain := "[" + inPad + "]" + geometryChain(it, w, h, fps)
+	if lin := gr.Filter(); lin != "" {
+		chain += "," + lin
 	}
-	return base + ",format=yuv420p"
+	sigma, opacity, hasBloom := gr.Bloom()
+	if !hasBloom {
+		return chain + ",format=yuv420p[" + outPad + "]"
+	}
+	// Bloom: split the graded picture, blur one copy and keep only its
+	// highlights (curves), then screen that glow back over the original.
+	base := fmt.Sprintf("blbase%d", idx)
+	a := fmt.Sprintf("bla%d", idx)
+	b := fmt.Sprintf("blb%d", idx)
+	glow := fmt.Sprintf("blg%d", idx)
+	return fmt.Sprintf(
+		"%s[%s];[%s]split[%s][%s];[%s]gblur=sigma=%s,curves=all='0/0 0.6/0 0.8/0.5 1/1'[%s];[%s][%s]blend=all_mode=screen:all_opacity=%s,format=yuv420p[%s]",
+		chain, base, base, a, b, b, model.FormatSeconds(sigma), glow, a, glow, model.FormatSeconds(opacity), outPad)
 }
 
 // ResolveOverlay turns an overlay's file into a real image: a plain image

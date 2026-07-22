@@ -35,12 +35,16 @@ func (e *editor) drawGrade() {
 	title := fmt.Sprintf(" grade · %s%s", it.File, tern(g.IsNeutral(), "  (neutral)", ""))
 	io.WriteString(e.out, moveTo(1, 1)+"\x1b[7m"+padRight(trunc(title, e.w), e.w)+"\x1b[0m")
 
+	// One compact row per parameter (there are many), the selected one
+	// highlighted; its help shows on a line above the text form.
 	specs := grade.Specs()
-	barW := 24
+	barW := 20
 	for i, s := range specs {
-		row := 3 + i*2
+		row := 3 + i
+		if row > e.h-4 {
+			break
+		}
 		v := g.Get(s.Name)
-		// slider position of v within [min,max]
 		frac := (v - s.Min) / (s.Max - s.Min)
 		filled := int(frac*float64(barW) + 0.5)
 		if filled < 0 {
@@ -51,26 +55,27 @@ func (e *editor) drawGrade() {
 		}
 		bar := strings.Repeat("─", filled) + "●" + strings.Repeat("─", barW-filled)
 		name := fmt.Sprintf("%-11s", s.Name)
-		val := fmt.Sprintf("%6s", num2(v))
-		neutralMark := ""
-		if v == s.Neutral {
-			neutralMark = " \x1b[2m(neutral)\x1b[0m"
+		val := fmt.Sprintf("%5s", num2(v))
+		mark := ""
+		if v != s.Neutral {
+			mark = " \x1b[33m•\x1b[0m" // a dot flags a changed (non-neutral) knob
 		}
 		if i == e.gradeIdx {
-			e.put(row, 2, "\x1b[7m▸ "+name+"\x1b[0m \x1b[36m"+bar+"\x1b[0m "+val+neutralMark)
-			e.put(row+1, 4, "\x1b[2m"+trunc(s.Help, e.w-6)+"\x1b[0m")
+			e.put(row, 2, "\x1b[7m▸ "+name+" "+bar+" "+val+"\x1b[0m"+mark)
 		} else {
-			e.put(row, 2, "  \x1b[1m"+name+"\x1b[0m \x1b[2m"+bar+"\x1b[0m "+val+neutralMark)
+			e.put(row, 2, "  \x1b[1m"+name+"\x1b[0m \x1b[2m"+bar+"\x1b[0m "+val+mark)
 		}
 	}
 
-	// The live text form, exactly what lands in the note.
+	// Selected parameter's help, then the live text form (exactly what lands
+	// in the note), so panel and text are visibly the same grade.
+	e.put(e.h-3, 2, "\x1b[2m"+trunc(specs[e.gradeIdx].Help, e.w-4)+"\x1b[0m")
 	txt := g.String()
 	if txt == "" {
 		txt = "(none)"
 	}
 	e.put(e.h-2, 2, "\x1b[2mtext:\x1b[0m "+trunc(txt, e.w-8))
-	foot := " j/k pick · h/l or ←/→ adjust · 0 reset param · r clear all · Tab/q back (w saves)"
+	foot := " j/k pick · h/l or ←/→ adjust · 0 reset one · r clear all · Tab/q back (w saves)"
 	io.WriteString(e.out, moveTo(e.h, 1)+"\x1b[7m"+padRight(trunc(foot, e.w), e.w)+"\x1b[0m")
 }
 
