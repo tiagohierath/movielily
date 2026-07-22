@@ -14,6 +14,7 @@ import (
 	"movielily/internal/manim"
 	"movielily/internal/model"
 	"movielily/internal/project"
+	"movielily/internal/store"
 	"movielily/internal/typst"
 )
 
@@ -31,6 +32,11 @@ import (
 // The invariant: source footage + instructions = export. Footage is only ever
 // read, so Export refuses to write its output over any source file.
 func Export(p *project.Project, items []model.SequenceItem, out string, draft bool) error {
+	// use|sequence records splice other sequences in before anything else.
+	items, err := store.Expand(p.SequencesDir(), items)
+	if err != nil {
+		return err
+	}
 	// Section headers are organisational only, audio beds run under the
 	// timeline, and overlays ride on top of it; none of them may enter the
 	// index-coupled concat graph below. Beds are mixed and overlays composited
@@ -158,8 +164,7 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 			vIdx := input
 			input++
 			fmt.Fprintf(&fc, "[%d:v]%s[%s];", vIdx, vchainFor(it, w, h, fps), vlab)
-			gain, _ := model.GainTag(it.Note)
-			fmt.Fprintf(&fc, "[%d:a]%s[%s];", aIdx, achainClip(it.Duration(), gain), alab)
+			fmt.Fprintf(&fc, "[%d:a]%s[%s];", aIdx, achainClip(it), alab)
 		default: // video
 			if it.Out <= it.In {
 				return fmt.Errorf("clip %q has out (%s) <= in (%s)", it.File, model.FormatSeconds(it.Out), model.FormatSeconds(it.In))
@@ -177,8 +182,7 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 				input++
 				fmt.Fprintf(&fc, "[%d:a]%s[%s];", aIdx, achain(), alab)
 			} else {
-				gain, _ := model.GainTag(it.Note)
-				fmt.Fprintf(&fc, "[%d:a]%s[%s];", idx, achainClip(it.Duration(), gain), alab)
+				fmt.Fprintf(&fc, "[%d:a]%s[%s];", idx, achainClip(it), alab)
 			}
 		}
 		vlabels = append(vlabels, "["+vlab+"]")
@@ -198,7 +202,7 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 	if len(overlays) > 0 {
 		cur := "[outv]"
 		for i, ov := range overlays {
-			abs, err := p.ResolveFootage(ov.it.File)
+			abs, err := ResolveOverlay(p, ov.it)
 			if err != nil {
 				return err
 			}
@@ -322,6 +326,17 @@ func vchainFor(it model.SequenceItem, w, h, fps int) string {
 	return vchain(w, h, fps)
 }
 
+// ResolveOverlay turns an overlay's file into a real image: a plain image
+// from footage/, or a typst template (titles/*.typ) rendered with the
+// overlay's note (tags stripped) as its text, giving reusable lower-thirds,
+// citations and credits that ride a scene. Shared with the review simulation.
+func ResolveOverlay(p *project.Project, it model.SequenceItem) (string, error) {
+	if strings.HasSuffix(it.File, ".typ") {
+		return typst.Render(p, it.File, model.StripTags(it.Note))
+	}
+	return p.ResolveFootage(it.File)
+}
+
 // overlayScalePos sizes an overlay to pct%% of the frame width (aspect kept)
 // and anchors it: corners inset by a margin, c centered, full fitted whole.
 func overlayScalePos(corner string, pct, w, h int) (scale, pos string) {
@@ -382,12 +397,17 @@ func bedChain(bed model.SequenceItem, total float64) string {
 }
 
 // achainClip is achain plus ~15ms micro-fades at both ends, so joins between
-// scenes can never click or pop, plus the item's #NdB gain tag if it has
-// one. Too-short clips skip the fades.
-func achainClip(dur, gainDB float64) string {
+// scenes can never click or pop, plus per-item corrections from tags: #NdB
+// gain, and #clean (highpass + gentle denoise, the same treatment the Navy
+// Lily recorder gives narration). Too-short clips skip the fades.
+func achainClip(it model.SequenceItem) string {
 	const f = 0.015
+	dur := it.Duration()
 	chain := achain()
-	if gainDB != 0 {
+	if model.HasTag(it.Note, "clean") {
+		chain += ",highpass=f=80,afftdn=nr=12:nf=-25"
+	}
+	if gainDB, ok := model.GainTag(it.Note); ok && gainDB != 0 {
 		chain += fmt.Sprintf(",volume=%sdB", model.FormatSeconds(gainDB))
 	}
 	if dur <= 4*f {

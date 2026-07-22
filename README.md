@@ -32,7 +32,9 @@ fetched ephemerally when missing.
 | `movielily seq image <seq> <img> <dur> [note]` | append a still (`#cover` in the note = fill the frame) |
 | `movielily seq title <seq> <template> <dur> <text>` | append a typst title card |
 | `movielily seq anim <seq> <template> <text>` | append a manim animated card (renders now, measures length) |
-| `movielily seq overlay <seq> <img> <at> <dur> [--place br:33] [note]` | image on top of the LAST scene |
+| `movielily seq overlay <seq> <img|tpl.typ> <at> <dur> [--place br:33] [note]` | image, or a typst template whose text is the note (lower-thirds), on top of the LAST scene |
+| `movielily seq use <seq> <other>` | splice another sequence in (chapters edited separately) |
+| `movielily silences <audio> [--keep]` | find the spoken stretches of a narration take; --keep turns them into selects |
 | `movielily seq audio <seq> <file> [--gain -12] [note]` | music/narration bed under the whole cut |
 | `movielily seq show <seq>` · `seq list` | inspect sequences |
 | `movielily edit [seq]` | the interactive editor (see keys below) |
@@ -70,6 +72,7 @@ colours them. Three tags are also switches:
 - `#cover` on a visual item: fill the frame (crop) instead of letterboxing;
 - `#mute` on a clip: silence its own sound (b-roll riding over narration);
 - `#-6db` / `#+3db` on a clip: adjust just that clip's level;
+- `#clean` on a clip/voice slice: highpass + gentle denoise for rough recordings;
 - `#duck` on a bed: sidechain-duck the music under the timeline's voice;
 - `#at_S` `#from_S` `#for_S` on a bed: enter the film at second S, skip S
   seconds into the source, play for S seconds (music per section instead of
@@ -82,16 +85,19 @@ with silence automatically instead of failing.
 
 ### Voice-first (narrated videos)
 
-Record your narration anywhere, then:
+Record your narration anywhere, pauses and retakes included, then:
 
 ```bash
 cp ~/gravacao.wav footage/
-movielily watch gravacao.wav        # listen; m notes a moment, i/o+Enter keeps a take
+movielily silences gravacao.wav --keep   # the spoken stretches become selects
 movielily seq from-selects aula
-movielily edit aula                 # T for chapter cards, overlays for drawings
-movielily seq audio aula musica.mp3 --gain -14
+movielily edit aula                 # prune misfires (d), split (s), cards (T)
+movielily seq audio aula musica.mp3 --gain -14 "trilha #duck"
 movielily export aula aula.mp4
 ```
+
+(`movielily watch gravacao.wav` is the manual alternative: listen and mark
+takes with i/o+Enter yourself.)
 
 A voice slice in the timeline shows a black canvas; decorate it with overlays
 (your drawings, references) and cards. The TUI previews voice scenes as the
@@ -124,6 +130,8 @@ scene starts in the finished movie.
 | key | action |
 |---|---|
 | `j`/`k`, arrows | move · `J`/`K` reorder · `g`/`G` top/bottom · `[`/`]` prev/next section |
+| `s` | split the clip in two at a point picked in mpv |
+| `<`/`>` | nudge the clip's in point ±0.5s (`+`/`-` does the out point) |
 | `Enter` | open the thing under the cursor in an mpv window, editor stays live: clips replay for redoing in/out (applies when you confirm), images/overlays/cards/animations/beds just open |
 | `r` / `R` | watch from here / the whole cut (simulated export in an mpv window, nothing renders) |
 | `T` / `A` | insert a title card / animated card below the cursor: pick template (last one prefilled), type text |
@@ -171,8 +179,31 @@ above its line: `at` seconds into that scene, for `dur` seconds (`0` = until
 the scene ends), clamped to the scene. `place` is a corner plus width percent
 (`tl`/`tr`/`bl`/`br`/`c`, e.g. `tr:30` = top-right at 30% of the frame width)
 or `full`. PNG transparency is respected. Reorder the scene and its overlay
-lines travel with it. Overlays appear in the export; `review` skips them and
-says so.
+lines travel with it. Overlays show in both export and review.
+
+The file can also be a typst template from `titles/`: then the overlay's
+note (tags stripped) is the card's text, rendered on a transparent page.
+That's the lower-third/citation workflow: `titles/lower.typ` (created with
+the defaults) is a caption block in the bottom-left; use place `full` and
+write one line per name/credit:
+
+```bash
+movielily seq overlay corte lower.typ 0.5 4 --place full "Fulano, artista"
+```
+
+## Nested sequences
+
+`use|other-sequence` splices another sequence in at that point on review and
+export, so a long film assembles from chapter sequences edited on their own:
+`movielily seq use filme capitulo-1`. Sections inside spliced sequences flow
+into `chapters` with correct timestamps.
+
+## Finding the takes: silences
+
+`movielily silences gravacao.wav` lists the spoken stretches of a continuous
+recording (everything between pauses of 0.6s+ under -35dB; tune with
+`--noise`, `--gap`, `--pad`). `--keep` appends them to selects.txt as
+numbered takes, ready for `seq from-selects`.
 
 ## Audio beds
 

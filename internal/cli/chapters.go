@@ -27,6 +27,9 @@ func newChaptersCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if items, err = store.Expand(p.SequencesDir(), items); err != nil {
+				return err
+			}
 			type ch struct {
 				at    float64
 				title string

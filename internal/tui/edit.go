@@ -115,8 +115,9 @@ type editor struct {
 	snapLines []string
 	snapTop   int
 
-	// async redo-in/out (Enter): mpv runs in its own window while the TUI
-	// stays live; the confirmed trim comes back through this channel
+	// async redo-in/out (Enter) and split-point picks (s): mpv runs in its
+	// own window while the TUI stays live; results come back through this
+	// channel (split=true carries a picked point instead of a trim)
 	reselectCh   chan reselectRes
 	reselectBusy bool
 
@@ -390,6 +391,12 @@ func (e *editor) handleInput(chunk []byte) (quit bool) {
 				e.nudge(1)
 			case '-':
 				e.nudge(-1)
+			case '>':
+				e.nudgeIn(1)
+			case '<':
+				e.nudgeIn(-1)
+			case 's':
+				e.startSplit()
 			case '\r', '\n':
 				e.wantReselect = true
 			case 'o':
@@ -549,6 +556,7 @@ var palette = []palCmd{
 	{"watch-all", "play the whole cut in mpv (no render)", func(e *editor) bool { e.wantReview = 2; return false }},
 	{"title-card", "insert a typst title card below the cursor", func(e *editor) bool { e.startTitleCard(); return false }},
 	{"animated-card", "insert a manim animated card below the cursor", func(e *editor) bool { e.startAnimCard(); return false }},
+	{"split", "cut the clip in two at a point picked in mpv", func(e *editor) bool { e.startSplit(); return false }},
 	{"bed", "add a music/narration bed under the whole cut", func(e *editor) bool { e.startBed(); return false }},
 	{"overlay", "put an image on top of the scene at the cursor", func(e *editor) bool { e.startOverlay(); return false }},
 	{"section", "insert a section header below the cursor", func(e *editor) bool { e.addSection(); return false }},
@@ -925,6 +933,84 @@ func (e *editor) nudge(dir float64) {
 	}
 	e.dirty = true
 	e.forceScene = true
+}
+
+// nudgeIn is the in-point counterpart of nudge: < and > move a clip's start
+// by half a second, clamped to the clip.
+func (e *editor) nudgeIn(dir float64) {
+	if len(e.items) == 0 {
+		return
+	}
+	it := &e.items[e.cursor]
+	if it.Kind != model.KindVideo {
+		e.status = "only clips have an in point (< and > move it)"
+		return
+	}
+	e.pushUndo()
+	in := it.In + dir*0.5
+	if in < 0 {
+		in = 0
+	}
+	if in > it.Out-0.1 {
+		in = it.Out - 0.1
+	}
+	it.In = in
+	e.dirty = true
+	e.forceScene = true
+	e.status = fmt.Sprintf("in %s (%ss) · w to save", mmss(it.In), trimf(it.Duration()))
+}
+
+// startSplit cuts the clip under the cursor in two at a point picked in mpv
+// (detached, like everything else): seek, Enter, done.
+func (e *editor) startSplit() {
+	if len(e.items) == 0 {
+		return
+	}
+	it := e.items[e.cursor]
+	if it.Kind != model.KindVideo {
+		e.status = "only clips can be split (s)"
+		return
+	}
+	if e.reselectBusy {
+		e.status = "an mpv pick is already open (confirm or close it first)"
+		return
+	}
+	e.reselectBusy = true
+	idx, file := e.cursor, it.File
+	mid := it.In + it.Duration()/2
+	go func() {
+		t, ok, err := mpv.PickTime(e.p, file, mid)
+		e.reselectCh <- reselectRes{idx: idx, file: file, at: t, ok: ok, err: err, split: true}
+	}()
+	e.status = "mpv opened: seek to the cut point, Enter splits · the editor stays live"
+}
+
+// applySplit lands a picked split point: the scene becomes two adjacent
+// scenes cut at that source time.
+func (e *editor) applySplit(r reselectRes) {
+	idx := r.idx
+	if idx >= len(e.items) || e.items[idx].File != r.file || e.items[idx].Kind != model.KindVideo {
+		e.status = "split confirmed but the scene moved (nothing applied)"
+		return
+	}
+	it := e.items[idx]
+	if r.at <= it.In+0.05 || r.at >= it.Out-0.05 {
+		e.status = fmt.Sprintf("split point %s is outside this scene's %s–%s", mmss(r.at), mmss(it.In), mmss(it.Out))
+		return
+	}
+	e.pushUndo()
+	left, right := it, it
+	left.Out = r.at
+	right.In = r.at
+	e.items[idx] = left
+	e.items = append(e.items, model.SequenceItem{})
+	copy(e.items[idx+2:], e.items[idx+1:])
+	e.items[idx+1] = right
+	e.cursor = idx + 1
+	e.marked = map[int]bool{}
+	e.dirty = true
+	e.forceScene = true
+	e.status = fmt.Sprintf("split at %s into %ss + %ss · w to save", mmss(r.at), trimf(left.Duration()), trimf(right.Duration()))
 }
 
 // jumpSection moves the cursor to the previous/next section header (or the
@@ -1336,12 +1422,22 @@ func (e *editor) startOverlay() {
 
 func (e *editor) commitOvlFile() {
 	name := strings.TrimSpace(string(e.inputBytes))
-	if _, err := e.p.ResolveFootage(name); err != nil {
-		e.status = err.Error()
-		e.inputBytes = nil // stay in the prompt
-		return
+	// Image from footage/, or a typst template (its text = the note: e edits).
+	if strings.HasSuffix(name, ".typ") {
+		if _, err := typst.Resolve(e.p, name); err != nil {
+			e.status = err.Error()
+			e.inputBytes = nil
+			return
+		}
+		e.pendingFile = typst.StoreName(name)
+	} else {
+		if _, err := e.p.ResolveFootage(name); err != nil {
+			e.status = err.Error()
+			e.inputBytes = nil // stay in the prompt
+			return
+		}
+		e.pendingFile = e.p.StoreName(name)
 	}
-	e.pendingFile = e.p.StoreName(name)
 	e.editWhat = editOvlSpec
 	e.inputBytes = []byte("0 0 " + model.DefaultPlace)
 }
@@ -1630,13 +1726,16 @@ func (e *editor) openInVim(st *xterm.State) error {
 	return nil
 }
 
-// reselectRes carries a confirmed mpv redo-in/out back into the main loop.
+// reselectRes carries a confirmed mpv redo-in/out (or a split point, when
+// split is set) back into the main loop.
 type reselectRes struct {
 	idx     int
 	file    string
 	in, out float64
 	ok      bool
 	err     error
+	split   bool
+	at      float64 // split: the picked source time
 }
 
 // reselect plays the current scene's full source clip in mpv so its in/out
@@ -1674,6 +1773,9 @@ func (e *editor) reselect() {
 	switch {
 	case it.IsSection():
 		fail("sections have no footage to open")
+		return
+	case it.Kind == model.KindUse:
+		fail("this splices sequence " + strings.TrimSuffix(it.File, ".txt") + " here (edit it with: movielily edit " + strings.TrimSuffix(it.File, ".txt") + ")")
 		return
 	case it.Kind == model.KindImage || it.Kind == model.KindOverlay:
 		if abs, err := e.p.ResolveFootage(it.File); err != nil {
@@ -1723,6 +1825,10 @@ func (e *editor) applyReselect(r reselectRes) {
 	switch {
 	case r.err != nil:
 		e.status = "mpv: " + r.err.Error()
+	case r.split && r.ok:
+		e.applySplit(r)
+	case r.split:
+		e.status = "split cancelled"
 	case !r.ok:
 		e.status = "in/out unchanged"
 	default:
@@ -1781,7 +1887,7 @@ func (e *editor) requestPreview() {
 		return
 	}
 	it := e.items[e.cursor]
-	if it.IsSection() || it.IsAudio() {
+	if it.IsSection() || it.IsAudio() || it.Kind == model.KindUse {
 		return
 	}
 	req := previewReq{gen: e.gen}
@@ -2027,8 +2133,10 @@ func (e *editor) drawHelp() {
 	lines := []string{
 		"  movielily edit · keys                                ",
 		"                                                       ",
-		"  j/k ↑/↓  move            ⏎    replay clip, redo in/out",
+		"  j/k ↑/↓  move            ⏎    open item / redo in-out  ",
 		"  J/K      reorder         +/-  nudge out/duration/gain ",
+		"  s        split the clip at a point picked in mpv      ",
+		"  < / >    nudge the clip's in point                    ",
 		"  g/G      top / bottom    t    duration (gain on beds) ",
 		"  [/]      prev/next sect  e    edit note or card text  ",
 		"  space    mark            y    yank marked/current     ",
@@ -2214,6 +2322,8 @@ func (e *editor) sceneSpans(idx int, m listMetrics) []span {
 			icon, style = "♪ ", "34"
 		case it.Kind == model.KindOverlay:
 			icon, style = "◱ ", "2;35"
+		case it.Kind == model.KindUse:
+			icon, style = "⧉ ", "1;36"
 		case model.IsAudioFile(it.File):
 			icon, style = "∿ ", "32"
 		}
@@ -2247,6 +2357,8 @@ func durLabel(it model.SequenceItem) string {
 		return trimf(it.Gain) + "dB"
 	case model.KindOverlay:
 		return mmss(it.Dur)
+	case model.KindUse:
+		return "seq"
 	}
 	return mmss(it.Duration())
 }
@@ -2337,6 +2449,9 @@ func (e *editor) drawRight() {
 		} else {
 			e.put(e.firstImgRow, col, "\x1b[2mnot rendered yet (renders on export/review)\x1b[0m")
 		}
+	case it.Kind == model.KindUse:
+		e.put(e.firstLabelRow, col, "\x1b[1;36mnested sequence\x1b[0m")
+		e.put(e.firstImgRow, col, "\x1b[2msplices "+trunc(strings.TrimSuffix(it.File, ".txt"), 24)+" here on review/export\x1b[0m")
 	case it.Kind == model.KindOverlay:
 		e.put(e.firstLabelRow, col, "\x1b[1;35moverlay\x1b[0m  \x1b[2mrides the scene above\x1b[0m")
 		e.put(e.firstImgRow, col, "\x1b[2mrendering…\x1b[0m")

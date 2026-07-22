@@ -3,6 +3,8 @@ package ffmpeg
 import (
 	"fmt"
 	"os/exec"
+	"regexp"
+	"strconv"
 
 	"movielily/internal/model"
 )
@@ -30,6 +32,48 @@ func Thumbnail(src string, at float64, isImage bool, outPNG string) error {
 		return fmt.Errorf("ffmpeg thumbnail: %v: %s", err, out)
 	}
 	return nil
+}
+
+// SpokenRegions runs silencedetect over an audio file and returns the
+// NON-silent stretches: the spoken takes of a continuous narration recording,
+// with the pauses, breaths and dead air between them removed. noise is the
+// silence floor in dB (e.g. -35), minGap the silence length (s) that counts
+// as a break.
+func SpokenRegions(src string, noise float64, minGap float64) (regions [][2]float64, total float64, err error) {
+	cmd := exec.Command("ffmpeg", "-nostdin", "-i", src,
+		"-af", fmt.Sprintf("silencedetect=noise=%sdB:d=%s", model.FormatSeconds(noise), model.FormatSeconds(minGap)),
+		"-f", "null", "-")
+	out, _ := cmd.CombinedOutput() // ffmpeg exits 0 here; output is on stderr
+	text := string(out)
+
+	if m := regexp.MustCompile(`Duration: (\d+):(\d+):(\d+\.?\d*)`).FindStringSubmatch(text); m != nil {
+		hh, _ := strconv.ParseFloat(m[1], 64)
+		mm, _ := strconv.ParseFloat(m[2], 64)
+		ss, _ := strconv.ParseFloat(m[3], 64)
+		total = hh*3600 + mm*60 + ss
+	}
+	if total == 0 {
+		return nil, 0, fmt.Errorf("could not read duration of %s", src)
+	}
+
+	starts := regexp.MustCompile(`silence_start: (-?\d+\.?\d*)`).FindAllStringSubmatch(text, -1)
+	ends := regexp.MustCompile(`silence_end: (-?\d+\.?\d*)`).FindAllStringSubmatch(text, -1)
+	pos := 0.0
+	for i, s := range starts {
+		sStart, _ := strconv.ParseFloat(s[1], 64)
+		if sStart > pos {
+			regions = append(regions, [2]float64{pos, sStart})
+		}
+		if i < len(ends) {
+			pos, _ = strconv.ParseFloat(ends[i][1], 64)
+		} else {
+			pos = total // silence runs to the end of the file
+		}
+	}
+	if pos < total {
+		regions = append(regions, [2]float64{pos, total})
+	}
+	return regions, total, nil
 }
 
 // Frame extracts one FULL-resolution frame at `at` seconds as a PNG (the

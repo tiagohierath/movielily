@@ -11,6 +11,7 @@ import (
 	"movielily/internal/manim"
 	"movielily/internal/model"
 	"movielily/internal/project"
+	"movielily/internal/store"
 	"movielily/internal/typst"
 )
 
@@ -31,8 +32,8 @@ func BuildEDL(p *project.Project, name string, items []model.SequenceItem) (path
 	var b strings.Builder
 	b.WriteString("# mpv EDL v0\n")
 	for _, it := range items {
-		if it.IsSection() || it.IsAudio() || it.IsOverlay() {
-			continue
+		if it.IsSection() || it.IsAudio() || it.IsOverlay() || it.Kind == model.KindUse {
+			continue // use items only reach here if a caller skipped expansion
 		}
 		var abs string
 		var e error
@@ -85,6 +86,18 @@ func reviewArgs(p *project.Project, name string, items []model.SequenceItem, fro
 	if from < 0 || from >= len(items) {
 		from = 0
 	}
+	// Expand use|sequence splices on each side of the start point separately,
+	// so `from` keeps meaning "the item under the cursor".
+	pre, err := store.Expand(p.SequencesDir(), items[:from])
+	if err != nil {
+		return nil, 0, 0, 0, err
+	}
+	sub, err := store.Expand(p.SequencesDir(), items[from:])
+	if err != nil {
+		return nil, 0, 0, 0, err
+	}
+	items = append(pre, sub...)
+	from = len(pre)
 	var offset float64 // timeline seconds skipped by starting at `from`
 	for _, it := range items[:from] {
 		offset += it.Duration()
@@ -115,7 +128,7 @@ func reviewArgs(p *project.Project, name string, items []model.SequenceItem, fro
 		start, end float64
 	}
 	type rOverlay struct {
-		file       string
+		item       model.SequenceItem
 		place      string
 		start, end float64
 	}
@@ -136,7 +149,7 @@ func reviewArgs(p *project.Project, name string, items []model.SequenceItem, fro
 					e = lastStart + lastDur
 				}
 				if s < e {
-					rovls = append(rovls, rOverlay{file: it.File, place: it.Place, start: s, end: e})
+					rovls = append(rovls, rOverlay{item: it, place: it.Place, start: s, end: e})
 				}
 			case it.Kind == model.KindVideo && !model.IsAudioFile(it.File) && model.HasTag(it.Note, "mute"):
 				vols = append(vols, volWin{muted: true, start: o, end: o + it.Duration()})
@@ -174,7 +187,7 @@ func reviewArgs(p *project.Project, name string, items []model.SequenceItem, fro
 		fmt.Fprintf(&vg, "[vid1]%s[rbase]", frameChain)
 		cur := "[rbase]"
 		for i, ov := range rovls {
-			abs, e := p.ResolveFootage(ov.file)
+			abs, e := ffmpeg.ResolveOverlay(p, ov.item)
 			if e != nil {
 				return nil, 0, 0, 0, e
 			}

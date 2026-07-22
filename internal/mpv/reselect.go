@@ -10,6 +10,61 @@ import (
 	"movielily/internal/project"
 )
 
+// PickTime plays the clip in its own mpv window seeded at `seed` and lets the
+// user pick ONE point in time: Enter confirms, q cancels. The TUI's split key
+// uses it to choose where a scene is cut in two.
+func PickTime(p *project.Project, clip string, seed float64) (t float64, ok bool, err error) {
+	abs, err := p.ResolveFootage(clip)
+	if err != nil {
+		return 0, false, err
+	}
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("movielily-pick-%d.sock", os.Getpid()))
+	defer os.Remove(socket)
+
+	cmd := exec.Command("mpv",
+		"--input-ipc-server="+socket,
+		"--force-window=yes",
+		"--keep-open=yes",
+		"--osd-level=1",
+		"--title=movielily — pick the split point — "+filepath.Base(abs),
+		abs,
+	)
+	if err := cmd.Start(); err != nil {
+		return 0, false, fmt.Errorf("could not start mpv (is it installed?): %w", err)
+	}
+	client, err := Dial(socket, 5*time.Second)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		return 0, false, err
+	}
+	defer client.Close()
+
+	if err := client.Bind("ENTER", "ml-pick"); err != nil {
+		return 0, false, err
+	}
+	_ = client.OSDOverlay(hudID, "{\\an7\\fs18\\bord2\\3c&H000000&\\1c&HFFFFFF&}movielily   seek to the cut point, Enter splits here, q cancels")
+	if seed > 0 {
+		_ = client.SetProp("time-pos", seed)
+	}
+
+	done := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(done) }()
+	for {
+		select {
+		case <-done:
+			return 0, false, nil
+		case ev := <-client.Events():
+			if ev.Event == "client-message" && len(ev.Args) > 0 && ev.Args[0] == "ml-pick" {
+				if tp, e := client.TimePos(); e == nil {
+					_, _ = client.Command("quit")
+					<-done
+					return tp, true, nil
+				}
+			}
+		}
+	}
+}
+
 // Reselect plays the whole clip in mpv, pre-seeded with the given IN/OUT, and
 // lets the user pick a new trim: i sets IN, o sets OUT, Enter confirms. It
 // returns the chosen IN/OUT only when confirmed (ok); quitting mpv (q) leaves

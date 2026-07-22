@@ -127,6 +127,7 @@ const (
 	KindTitle   ItemKind = "title"
 	KindOverlay ItemKind = "overlay"
 	KindAnim    ItemKind = "anim"
+	KindUse     ItemKind = "use"
 )
 
 // HasTag reports whether the note carries #name (the leading # optional in
@@ -141,6 +142,12 @@ func HasTag(note, name string) bool {
 		}
 	}
 	return false
+}
+
+// StripTags removes #tags from text (for places where a note doubles as
+// display text, like a typst overlay's caption) and tidies the whitespace.
+func StripTags(s string) string {
+	return strings.Join(strings.Fields(tagRe.ReplaceAllString(s, "")), " ")
 }
 
 var gainTagRe = regexp.MustCompile(`^#([+-]?[0-9]+(?:\.[0-9]+)?)db$`)
@@ -244,8 +251,8 @@ func (it SequenceItem) IsOverlay() bool { return it.Kind == KindOverlay }
 // occupy no time; audio beds and overlays ride along without extending it.
 func (it SequenceItem) Duration() float64 {
 	switch it.Kind {
-	case KindSection, KindAudio, KindOverlay:
-		return 0
+	case KindSection, KindAudio, KindOverlay, KindUse:
+		return 0 // a use's real length appears once it is expanded
 	case KindImage, KindTitle, KindAnim:
 		return it.Dur
 	}
@@ -264,6 +271,8 @@ func (it SequenceItem) String() string {
 		return "title|" + field(it.File) + "|" + FormatSeconds(it.Dur) + "|" + text(it.Note)
 	case KindAnim:
 		return "anim|" + field(it.File) + "|" + FormatSeconds(it.Dur) + "|" + text(it.Note)
+	case KindUse:
+		return "use|" + field(it.File) + "|" + text(it.Note)
 	case KindOverlay:
 		place := it.Place
 		if place == "" {
@@ -364,6 +373,17 @@ func ParseItem(line string) (SequenceItem, error) {
 		}
 		return SequenceItem{Kind: KindAnim, File: strings.TrimSpace(p[1]), Dur: dur,
 			Note: strings.TrimSpace(p[3])}, nil
+	case KindUse:
+		// use|sequence|note: splice another sequence in at this point.
+		p := strings.SplitN(line, "|", 3)
+		if len(p) < 2 || strings.TrimSpace(p[1]) == "" {
+			return SequenceItem{}, fmt.Errorf("invalid use %q (want use|sequence|note)", line)
+		}
+		it := SequenceItem{Kind: KindUse, File: strings.TrimSpace(p[1])}
+		if len(p) == 3 {
+			it.Note = strings.TrimSpace(p[2])
+		}
+		return it, nil
 	case KindOverlay:
 		p := strings.SplitN(line, "|", 6)
 		if len(p) < 5 {

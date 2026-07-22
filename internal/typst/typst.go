@@ -34,9 +34,20 @@ func cacheDir(p *project.Project) string {
 	return filepath.Join(p.Root, ".cache", "titles")
 }
 
-// EnsureDefault makes sure titles/ exists with at least one template, creating
-// chapter.typ on first use. Returns the template's base name when it created
-// one ("" if the folder already had templates).
+// DefaultLowerTemplate is the starter overlay card: a transparent page with a
+// small caption block, for names/citations riding a scene (place it "full").
+const DefaultLowerTemplate = `// movielily lower-third overlay card. Transparent page: use it as an
+// overlay with place "full"; the text arrives as sys.inputs.text.
+#let card-text = sys.inputs.at("text", default: "Name")
+#set page(width: 720pt, height: 540pt, margin: 0pt, fill: none)
+#set text(fill: white, size: 26pt)
+#place(bottom + left, dx: 36pt, dy: -36pt,
+  block(fill: rgb(0, 0, 0, 170), inset: 12pt, radius: 3pt)[#card-text])
+`
+
+// EnsureDefault makes sure titles/ exists with starter templates, creating
+// chapter.typ (full-frame card) and lower.typ (transparent overlay caption)
+// on first use. Returns the created names ("" if any already existed).
 func EnsureDefault(p *project.Project) (created string, err error) {
 	dir := TitlesDir(p)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -46,6 +57,9 @@ func EnsureDefault(p *project.Project) (created string, err error) {
 		return "", nil
 	}
 	if err := os.WriteFile(filepath.Join(dir, "chapter.typ"), []byte(DefaultTemplate), 0o644); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "lower.typ"), []byte(DefaultLowerTemplate), 0o644); err != nil {
 		return "", err
 	}
 	return "chapter.typ", nil
