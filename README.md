@@ -1,83 +1,253 @@
 # movielily
 
-A minimal, notebook-style video editor — a small command-line companion to
-**mpv** and **ffmpeg** for making short videos fast.
+movielily is a notebook-style video editor for the terminal: watch footage,
+log the good moments, assemble a plain-text cut, watch it instantly without
+rendering, and export a YouTube-ready 4:3 file with ffmpeg.
 
-The workflow is **watch → log → select → assemble → export**, not
-*import → timeline → effects → render*. It feels closer to a notebook and a
-screening room than to Premiere or Resolve.
+**The one rule:** your footage is never modified, moved, or renamed. mpv and
+ffmpeg only ever *read* it. Every decision is a line of text; export always
+writes a brand-new file.
 
-**One invariant, above all:**
+Times are always **seconds**: `90`, `90s`, and `1:30` all mean the same thing.
 
-```
-source footage  +  instructions  =  export
-```
+Needs **mpv** and **ffmpeg** on PATH. Title cards additionally use **typst**,
+animated cards use **manim**; both are optional, and on a nix machine they are
+fetched ephemerally when missing.
 
-movielily **never modifies, moves or rewrites your footage**. mpv only plays it,
-ffmpeg only reads it; every edit lives in plain-text "instructions" you can
-read, `grep` and hand-edit. Export always produces a *new* file (and refuses to
-write anywhere inside `footage/`).
+---
 
-## Quick start
+## Command reference
 
-```sh
-nix develop                 # go + mpv + ffmpeg dev shell (or: direnv allow)
-just build                  # -> ./bin/movielily
-
-cd ~/my-film
-movielily init
-cp ~/clips/*.mp4 footage/
-
-movielily watch clip001.mp4         # m=marker  i/o=in/out  Enter=select
-movielily search reaction
-movielily seq from-selects roughcut
-movielily seq image roughcut title.png 4 "opening title #intro"
-movielily seq show roughcut
-movielily review roughcut           # play instantly in mpv (no render)
-movielily export roughcut out.mp4   # single 4:3 H264 file, ready for YouTube
-```
-
-## A project on disk
-
-```
-movielily.conf     # export target: 4:3, fps, quality (crf)
-footage/           # your .mp4 / .jpg / .png  (read-only, never touched)
-markers.txt        # file|seconds|note
-selects.txt        # file|in|out|note
-notes.txt          # file|time|text
-sequences/         # video|file|in|out|note · image|file|duration|note · section|title
-```
-
-A sequence is just one record per line, so you can edit it with `movielily
-edit` (the TUI) or in vim — the TUI's `v` key opens the very same file and
-reloads it when you quit vim, so the two stay in lock-step. `section|…` lines
-are organisational "folders" (e.g. `Scene 1`) and contribute nothing to the
-export.
-
-Tags are just `#hashtags` inside any note — `movielily tag` lists them,
-`movielily tag funny` shows everything tagged `#funny`.
-
-## Commands
-
-| | |
+| command | what it does |
 |---|---|
-| `init [dir]` | create a project |
-| `watch <clip>` | play in mpv; `m` marker, `i`/`o` in/out, `Enter` save select |
-| `marker add/list` · `select add/list` · `note add/list` | log by hand |
-| `search <term>` | search markers, selects and notes |
-| `tag [name]` | list tags, or show everything tagged `#name` |
-| `seq video/image/show/list/from-selects` | assemble sequences |
-| `edit [seq]` | interactive TUI: `j`/`k` move, `J`/`K` reorder, `⏎` replay clip in mpv to redo in/out, `e` note, `o` section, `v` open in vim, `space` mark, `d` del, `u` undo, `w` save, `q` quit; first/last frame preview in kitty-style terminals |
-| `review <seq>` | watch a sequence instantly via mpv EDL (no render) |
-| `export <seq> <out.mp4>` | render with ffmpeg |
+| `movielily init [dir] [--footage <src>]` | create a project (optionally copy media in) |
+| `movielily watch <clip>` | play in mpv and log: `m` marker, `i`/`o` in/out, `Enter` select (works on audio files too) |
+| `movielily marker add <clip> <t> [note]` · `marker list` | markers by hand |
+| `movielily select add <clip> <in> <out> [note]` · `select list` | selects by hand |
+| `movielily note add [--clip c] [--time t] <text>` · `note list` | free notes, timestamped if you want |
+| `movielily search <term>` | search markers, selects and notes |
+| `movielily tag [name]` | list #tags, or everything tagged #name |
+| `movielily seq from-selects <seq> [--force]` | seed a sequence from all selects |
+| `movielily seq video <seq> <file> <in> <out> [note]` | append a clip (or a slice of a voice recording) |
+| `movielily seq image <seq> <img> <dur> [note]` | append a still (`#cover` in the note = fill the frame) |
+| `movielily seq title <seq> <template> <dur> <text>` | append a typst title card |
+| `movielily seq anim <seq> <template> <text>` | append a manim animated card (renders now, measures length) |
+| `movielily seq overlay <seq> <img> <at> <dur> [--place br:33] [note]` | image on top of the LAST scene |
+| `movielily seq audio <seq> <file> [--gain -12] [note]` | music/narration bed under the whole cut |
+| `movielily seq show <seq>` · `seq list` | inspect sequences |
+| `movielily edit [seq]` | the interactive editor (see keys below) |
+| `movielily review <seq> [--from N]` | watch the cut in mpv, simulated export, no render |
+| `movielily export <seq> <out.mp4>` | render the real file (auto-snapshots in versioned projects) |
+| `movielily snapshot [message]` | commit the instructions to git (creates the repo on first use) |
+| `movielily snapshot list` · `snapshot restore <id>` | see versions · roll back (safely: it snapshots first) |
+| `movielily version` | version info |
 
-Times are always stored as **seconds** (never frame numbers); you can *type*
-`90`, `90s` or `1:30`.
+Aliases: `m`=marker, `sel`=select, `n`=note, `s`=seq, `snap`=snapshot.
 
-## Scope (v1)
+---
 
-MP4/H.264 footage, JPG/PNG images, 4:3, SDR. No timeline, transitions, effects,
-filters, colour, database or GPU rendering — by design. If a feature doesn't
-help you *watch, note, find, select or assemble*, it doesn't belong here.
+## The sequence file
 
-Built with Go, [cobra](https://github.com/spf13/cobra), mpv and ffmpeg.
+A sequence is the movie: an ordered list of records, one per line, in
+`sequences/<name>.txt`. Edit it in the TUI or in vim, both stay in sync.
+
+```
+section|Abertura                                  organisational folder, no runtime
+title|chapter.typ|4|Capítulo 1                    typst card, 4s on screen
+video|clip001.mp4|72.3|85.1|the punchline #best   clip trimmed to in..out
+overlay|ref.png|2|5|tr:30|the reference           rides the scene ABOVE it
+video|voz.wav|0|35|narração                       voice slice: black canvas + sound
+image|photo.jpg|5|opening #cover                  still; #cover crops to fill
+anim|card.py|3.8|Fim                              manim card (length measured)
+audio|song.mp3|-12|music bed                      under the whole cut, cut at the end
+```
+
+Notes carry `#tags` anywhere; `search` and `tag` find them, the TUI colours
+them, and `#cover` on visual items switches letterbox to fill-and-crop.
+
+## Workflows
+
+### Voice-first (narrated videos)
+
+Record your narration anywhere, then:
+
+```bash
+cp ~/gravacao.wav footage/
+movielily watch gravacao.wav        # listen; m notes a moment, i/o+Enter keeps a take
+movielily seq from-selects aula
+movielily edit aula                 # T for chapter cards, overlays for drawings
+movielily seq audio aula musica.mp3 --gain -14
+movielily export aula aula.mp4
+```
+
+A voice slice in the timeline shows a black canvas; decorate it with overlays
+(your drawings, references) and cards. The TUI previews voice scenes as the
+waveform of that exact slice.
+
+### Footage-first
+
+`watch` each clip and mark selects as it plays, `seq from-selects`, then
+arrange in the TUI, `review`, `export`.
+
+## watch: logging while playing
+
+mpv opens with an on-screen HUD. `m` drops a marker, `i`/`o` set IN/OUT
+(shown on the seekbar, looped via A-B so you can check the trim), `Enter`
+saves the select, `q` quits. Markers land in `markers.txt`, selects in
+`selects.txt`. Works identically on audio files.
+
+## edit: the TUI
+
+```bash
+movielily edit filme        # or just `movielily edit` with a single sequence
+```
+
+Left: the cut, one scene per line, colour-coded with an icon per kind
+(▶ clip · ∿ voice · ▦ image · ▣ title card · ✦ animated card · ♪ bed ·
+◱ overlay). Right: previews (first/last frame, the rendered card, or the
+voice waveform, in kitty/Ghostty/WezTerm) plus details, including where the
+scene starts in the finished movie.
+
+| key | action |
+|---|---|
+| `j`/`k`, arrows | move · `J`/`K` reorder · `g`/`G` top/bottom · `[`/`]` prev/next section |
+| `Enter` | redo the scene's in/out in an mpv window; the editor stays live, the trim applies when you confirm |
+| `r` / `R` | watch from here / the whole cut (simulated export in an mpv window, nothing renders) |
+| `T` / `A` | insert a title card / animated card below the cursor: pick template (last one prefilled), type text |
+| `e` | edit the note (or a card's text, or a section's heading) |
+| `t` | edit the number that matters: duration (stills, cards, overlays) or gain (beds) |
+| `+`/`-` | nudge without typing: out point ±0.5s, duration ±0.5s, gain ±1dB |
+| `space` | mark · `d` cut (marked or current) · `y` yank · `p` paste below cursor |
+| `/` | search file names and notes · `n`/`N` next/previous match |
+| `u` / `Ctrl-R` | undo / redo |
+| `o` | new section · `v` open the file in vim and reload on quit |
+| `Tab` | snapshots tab: the git branch graph, scroll with `j`/`k`, `Tab` back |
+| `:` | command palette: fuzzy-search every command by name (`wat` finds `watch`/`watch-all`), Tab/Ctrl-n cycles, Enter runs |
+| `w` | save · `q`/`Q` quit saving/discarding · `?` help overlay |
+
+`MOVIELILY_EDITOR` overrides vim (e.g. `MOVIELILY_EDITOR="vim -u NONE"`).
+
+## Title cards (typst)
+
+Templates are `.typ` files in `titles/`; each card names its template and its
+text, so one style serves any number of cards. First use creates
+`titles/chapter.typ` (a black 4:3 page, centered white text) to copy and
+restyle. The contract: the text arrives as `sys.inputs.text`. Rendered PNGs
+are cached in `.cache/` by template content + text, so editing the template
+re-renders every card that uses it, and reuse costs nothing.
+
+```bash
+movielily seq title filme chapter.typ 4 "Capítulo 2"
+cp titles/chapter.typ titles/lower.typ   # new style, edit freely
+```
+
+## Animated cards (manim)
+
+Same idea, animated: `.py` manim scenes in `anims/`, first use creates
+`anims/card.py` (text writes in, holds, fades out). The contract: a Scene
+subclass named `Card` that reads `$MOVIELILY_TEXT`. movielily renders at the
+project's exact frame and fps, measures the animation's length, stores it in
+the record, and caches the clip. Renders are slow the first time (the TUI
+hands you the terminal so you see manim's progress); cached forever after.
+Animated cards are silent by design: the bed plays underneath.
+
+## Overlays
+
+`overlay|file|at|dur|place|note` puts an image on top of the scene directly
+above its line: `at` seconds into that scene, for `dur` seconds (`0` = until
+the scene ends), clamped to the scene. `place` is a corner plus width percent
+(`tl`/`tr`/`bl`/`br`/`c`, e.g. `tr:30` = top-right at 30% of the frame width)
+or `full`. PNG transparency is respected. Reorder the scene and its overlay
+lines travel with it. Overlays appear in the export; `review` skips them and
+says so.
+
+## Audio beds
+
+`seq audio` lays a file under the whole cut from 0:00, mixed below the
+timeline's own sound at `--gain` dB (negative sits music under a voice; `0`
+suits narration over silent footage). It is cut when the video ends, never
+extends the runtime, and several beds stack. Both export and review play
+beds. Change the gain with `t` or `+`/`-` in the TUI.
+
+## review: watch without rendering
+
+```bash
+movielily review filme
+movielily review filme --from 5     # start at scene 5 (seq show numbering)
+```
+
+Instant, full resolution: mpv plays the exact cut through a generated
+playlist, with stills held for their duration, cards rendered, voice slices
+audible, beds mixed at their gain and offset, and the picture letterboxed
+into the project frame. Only overlays are export-only. In the TUI, `r`/`R` do
+the same in a separate window.
+
+## export: the real render
+
+```bash
+movielily export filme filme.mp4
+```
+
+One H.264 file, tuned to YouTube's upload recommendations: High profile
+4.2, constant frame rate, keyframe every 2s, 2 B-frames, BT.709 flagged,
+yuv420p, AAC-LC 320k 48kHz, `+faststart`. Resolution, fps and CRF come from
+`movielily.conf`. Export refuses to write into `footage/` or over any source.
+In a snapshotted project, every export automatically commits a snapshot named
+after the output file, so any published video maps to its exact cut.
+
+## Snapshots and versions (git)
+
+```bash
+movielily snapshot "primeiro corte"
+movielily snapshot list
+movielily snapshot restore d77b1c6    # safe: snapshots the current state first
+```
+
+Optional. The first `snapshot` turns the project into a git repo whose
+`.gitignore` keeps footage, exports and caches out, so only the small text
+files are versioned. It is a completely normal repo:
+
+```bash
+git checkout -b versao-curta      # branch a different cut of the same movie
+movielily snapshot "sem a intro"
+git checkout main && git merge versao-curta   # line-per-record merges cleanly
+git remote add origin … && git push           # collaborate
+```
+
+A team shares the repo (instructions) and ships `footage/` out of band
+(drive, rsync); since records are one per line, two people editing different
+scenes merge without conflict. The TUI's `Tab` shows the branch graph.
+
+## Configuration
+
+`movielily.conf` at the project root:
+
+```
+name = meu-filme
+width = 1440      # 4:3 at 1080p
+height = 1080
+fps = 30
+crf = 18          # libx264 quality, lower is better
+```
+
+## On disk
+
+```
+movielily.conf      config (above)
+footage/            your media, read-only: mp4 · jpg/png · wav/mp3/m4a/flac/ogg
+titles/             typst card templates (.typ)
+anims/              manim card templates (.py)
+markers.txt         file|seconds|note
+selects.txt         file|in|out|note
+notes.txt           file|time|text
+sequences/*.txt     the cuts (records above)
+.cache/             rendered cards, regenerable, gitignored
+```
+
+Everything is plain text with `#` comments and blank lines ignored, so `cat`,
+`grep`, `sed`, vim and git all work directly on it.
+
+## Ideas parked for later
+
+See `docs/color-grading-idea.md` (still-frame grading with text presets, and
+a command palette for the TUI).

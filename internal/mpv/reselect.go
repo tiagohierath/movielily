@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"movielily/internal/model"
 	"movielily/internal/project"
 )
 
@@ -34,7 +33,8 @@ func Reselect(p *project.Project, clip string, curIn, curOut float64) (in, out f
 		"--title=movielily — redo in/out — "+filepath.Base(abs),
 		abs,
 	)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	// No stdio: mpv runs in its own window and the OSD carries the whole UI,
+	// so the caller's terminal (the TUI) stays untouched and fully live.
 	if err := cmd.Start(); err != nil {
 		return 0, 0, false, fmt.Errorf("could not start mpv (is it installed?): %w", err)
 	}
@@ -45,8 +45,6 @@ func Reselect(p *project.Project, clip string, curIn, curOut float64) (in, out f
 		return 0, 0, false, err
 	}
 	defer client.Close()
-
-	fmt.Println("redo in/out — i=IN  o=OUT  Enter=use this trim  q=cancel")
 
 	for key, msg := range map[string]string{"i": "ml-in", "o": "ml-out", "ENTER": "ml-select"} {
 		if err := client.Bind(key, msg); err != nil {
@@ -80,19 +78,16 @@ func Reselect(p *project.Project, clip string, curIn, curOut float64) (in, out f
 			case "ml-in":
 				if t, e := client.TimePos(); e == nil {
 					inPt, haveIn = t, true
-					fmt.Printf("  IN  @ %ss\n", model.FormatSeconds(t))
 					_ = drawUI(client, haveIn, haveOut, inPt, outPt, 0, 0, nil)
 				}
 			case "ml-out":
 				if t, e := client.TimePos(); e == nil {
 					outPt, haveOut = t, true
-					fmt.Printf("  OUT @ %ss\n", model.FormatSeconds(t))
 					_ = drawUI(client, haveIn, haveOut, inPt, outPt, 0, 0, nil)
 				}
 			case "ml-select":
 				if !haveIn || !haveOut || outPt <= inPt {
 					client.OSD("set IN (i) and OUT (o) first")
-					fmt.Println("  (set IN with i and OUT with o first)")
 					continue
 				}
 				_, _ = client.Command("quit")

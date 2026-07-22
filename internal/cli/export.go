@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -32,6 +34,14 @@ func newExportCmd() *cobra.Command {
 				return err
 			}
 			fmt.Printf("done: %s\n", args[1])
+			// In a versioned project every render becomes a findable version:
+			// the snapshot ties the published file to the exact cut behind it.
+			// Projects that never opted into snapshots are left alone.
+			if hasSnapshotRepo(p.Root) {
+				if err := takeSnapshot("export " + filepath.Base(args[1])); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: auto-snapshot failed: %v\n", err)
+				}
+			}
 			return nil
 		},
 	}

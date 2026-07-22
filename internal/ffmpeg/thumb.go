@@ -31,3 +31,28 @@ func Thumbnail(src string, at float64, isImage bool, outPNG string) error {
 	}
 	return nil
 }
+
+// Waveform draws the [in,out] slice of an audio file as a waveform PNG, the
+// preview a voice segment gets instead of a first frame. Read-only, like
+// everything else that touches footage.
+func Waveform(src string, in, out float64, outPNG string) error {
+	args := []string{"-nostdin", "-loglevel", "error", "-y"}
+	if in > 0 {
+		args = append(args, "-ss", model.FormatSeconds(in))
+	}
+	if out > in {
+		args = append(args, "-t", model.FormatSeconds(out-in))
+	}
+	args = append(args,
+		"-i", src,
+		"-filter_complex", "showwavespic=s=480x180:colors=white:split_channels=0",
+		"-frames:v", "1",
+		"-f", "image2",
+		outPNG,
+	)
+	cmd := exec.Command("ffmpeg", args...)
+	if msg, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("ffmpeg waveform: %v: %s", err, msg)
+	}
+	return nil
+}

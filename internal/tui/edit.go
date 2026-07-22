@@ -32,15 +32,30 @@ import (
 	xterm "golang.org/x/term"
 
 	"movielily/internal/ffmpeg"
+	"movielily/internal/manim"
 	"movielily/internal/model"
 	"movielily/internal/mpv"
 	"movielily/internal/project"
 	"movielily/internal/store"
+	"movielily/internal/typst"
 )
 
 const (
 	modeNormal = iota
 	modeEdit
+	modeSearch
+	modePalette
+)
+
+// inline-edit targets (what the modeEdit input line is editing)
+const (
+	editNote = iota
+	editDur
+	editGain
+	editTitleTemplate // title-card wizard step 1: which template
+	editTitleText     // title-card wizard step 2: the card's text
+	editAnimTemplate  // animated-card wizard step 1
+	editAnimText      // animated-card wizard step 2
 )
 
 type previewReq struct {
@@ -48,6 +63,12 @@ type previewReq struct {
 	isImage           bool
 	firstSrc, lastSrc string
 	firstAt, lastAt   float64
+
+	// title cards render their PNG in the preview goroutine (typst is fast)
+	titleTpl, titleText string
+	// voice segments preview as a waveform of their exact slice
+	wave            bool
+	waveIn, waveOut float64
 }
 
 type previewRes struct {
@@ -68,9 +89,34 @@ type editor struct {
 	dirty  bool
 
 	mode       int
-	inputBytes []byte // text being edited (note, title, or duration)
-	editDur    bool   // the inline edit targets a still's duration, not its note
+	inputBytes []byte // text being edited (note, title, duration, gain, search)
+	editWhat   int    // which field the modeEdit input line is editing
 	status     string
+
+	clipboard    []model.SequenceItem // last deleted/yanked scenes, for p
+	redoStack    [][]model.SequenceItem
+	lastSearch   string
+	helpOpen     bool
+	wantReview   int    // 0 none · 1 from cursor · 2 whole cut
+	lastTemplate string // last title-card template used, prefilled on T
+
+	// animated-card wizard (A): the render runs suspended, like vim/mpv
+	lastAnimTemplate string
+	pendingAnimTpl   string
+	pendingAnimText  string
+	wantAnim         bool
+
+	// snapshots tab (Tab): the git branch graph, read-only
+	screen    int // 0 = editor · 1 = snapshots
+	snapLines []string
+	snapTop   int
+
+	// async redo-in/out (Enter): mpv runs in its own window while the TUI
+	// stays live; the confirmed trim comes back through this channel
+	reselectCh   chan reselectRes
+	reselectBusy bool
+
+	palSel int // command palette (:) selection index
 
 	w, h  int
 	kitty bool
@@ -133,19 +179,20 @@ func Edit(p *project.Project, name string) error {
 	defer os.RemoveAll(tmp)
 
 	e := &editor{
-		p:        p,
-		name:     name,
-		path:     path,
-		items:    items,
-		marked:   map[int]bool{},
-		out:      bufio.NewWriter(os.Stdout),
-		kitty:    kittySupported(),
-		tmpDir:   tmp,
-		cache:    map[string]string{},
-		reqCh:    make(chan previewReq, 1),
-		resCh:    make(chan previewRes, 1),
-		parkedCh: make(chan struct{}, 1),
-		resumeCh: make(chan struct{}, 1),
+		p:          p,
+		name:       name,
+		path:       path,
+		items:      items,
+		marked:     map[int]bool{},
+		out:        bufio.NewWriter(os.Stdout),
+		kitty:      kittySupported(),
+		tmpDir:     tmp,
+		cache:      map[string]string{},
+		reqCh:      make(chan previewReq, 1),
+		resCh:      make(chan previewRes, 1),
+		parkedCh:   make(chan struct{}, 1),
+		resumeCh:   make(chan struct{}, 1),
+		reselectCh: make(chan reselectRes, 1),
 	}
 	if seeded {
 		e.dirty = true
@@ -228,7 +275,16 @@ func Edit(p *project.Project, name string) error {
 			}
 			if e.wantReselect {
 				e.wantReselect = false
-				e.reselect(st)
+				e.reselect()
+			}
+			if e.wantReview != 0 {
+				whole := e.wantReview == 2
+				e.wantReview = 0
+				e.reviewOp(whole)
+			}
+			if e.wantAnim {
+				e.wantAnim = false
+				e.animRenderOp(st)
 			}
 			if quit {
 				if e.dirty && !e.discard {
@@ -244,6 +300,8 @@ func Edit(p *project.Project, name string) error {
 				e.drawImages()
 				e.out.Flush()
 			}
+		case r := <-e.reselectCh:
+			e.applyReselect(r)
 		case <-winch:
 			e.w, e.h, _ = xterm.GetSize(int(os.Stdout.Fd()))
 			e.computeLayout()
@@ -257,8 +315,26 @@ func Edit(p *project.Project, name string) error {
 // ---- input ----------------------------------------------------------------
 
 func (e *editor) handleInput(chunk []byte) (quit bool) {
+	if e.screen == 1 {
+		e.handleSnapshots(chunk)
+		return false
+	}
 	if e.mode == modeEdit {
 		e.handleEdit(chunk)
+		return false
+	}
+	if e.mode == modeSearch {
+		e.handleSearch(chunk)
+		return false
+	}
+	if e.mode == modePalette {
+		return e.handlePalette(chunk)
+	}
+	if e.helpOpen { // any key closes the help overlay
+		e.helpOpen = false
+		e.redraw(true)
+		e.onSceneChange()
+		e.out.Flush()
 		return false
 	}
 
@@ -295,30 +371,82 @@ func (e *editor) handleInput(chunk []byte) (quit bool) {
 				e.moveDown()
 			case 'K':
 				e.moveUp()
+			case '[':
+				e.jumpSection(-1)
+			case ']':
+				e.jumpSection(1)
 			case ' ':
 				e.toggleMark()
 			case 'e':
 				e.startEdit()
 			case 't':
 				e.startDurEdit()
+			case '+', '=':
+				e.nudge(1)
+			case '-':
+				e.nudge(-1)
 			case '\r', '\n':
 				e.wantReselect = true
 			case 'o':
 				e.addSection()
+			case 'T':
+				e.startTitleCard()
+			case 'A':
+				e.startAnimCard()
+			case 0x09: // Tab: the snapshots (git graph) tab
+				e.openSnapshots()
 			case 'v':
 				e.wantVim = true
 			case 'd':
 				e.deleteSel()
+			case 'y':
+				e.yank()
+			case 'p':
+				e.paste()
 			case 'u':
 				e.undoOp()
+			case 0x12: // ctrl-r
+				e.redoOp()
+			case '/':
+				e.startSearch()
+			case ':':
+				e.mode = modePalette
+				e.inputBytes = nil
+				e.palSel = 0
+			case 'n':
+				e.findNext(1)
+			case 'N':
+				e.findNext(-1)
+			case 'r':
+				e.wantReview = 1
+			case 'R':
+				e.wantReview = 2
 			case 'w':
 				e.saveOp()
+			case '?':
+				e.helpOpen = true
 			}
 		}
 	}
 
-	if e.mode == modeEdit { // startEdit switched us
+	if e.mode == modePalette { // ':' opened the palette this chunk
+		e.drawAll()
+		e.drawPalette()
+		e.out.Flush()
+		return false
+	}
+	if e.mode != modeNormal { // an inline edit or search prompt took over
 		e.drawFooter()
+		e.out.Flush()
+		return false
+	}
+	if e.helpOpen {
+		e.drawHelp()
+		e.out.Flush()
+		return false
+	}
+	if e.screen == 1 {
+		e.drawSnapshots()
 		e.out.Flush()
 		return false
 	}
@@ -338,7 +466,7 @@ func (e *editor) handleEdit(chunk []byte) {
 		switch {
 		case b == 0x1b:
 			e.mode = modeNormal
-			e.editDur = false
+			e.editWhat = editNote
 			e.status = "edit cancelled"
 			e.drawAll()
 			e.onSceneChange()
@@ -363,6 +491,227 @@ func (e *editor) handleEdit(chunk []byte) {
 	}
 	e.drawFooter()
 	e.out.Flush()
+}
+
+// handleSearch reads the / prompt; Enter jumps to the first match, n/N repeat.
+func (e *editor) handleSearch(chunk []byte) {
+	for _, b := range chunk {
+		switch {
+		case b == 0x1b:
+			e.mode = modeNormal
+			e.inputBytes = nil
+			e.status = "search cancelled"
+			e.drawAll()
+			e.out.Flush()
+			return
+		case b == '\r' || b == '\n':
+			e.mode = modeNormal
+			e.lastSearch = strings.TrimSpace(string(e.inputBytes))
+			e.inputBytes = nil
+			e.findNext(1)
+			e.clampCursor()
+			e.drawAll()
+			e.onSceneChange()
+			e.out.Flush()
+			return
+		case b == 0x7f || b == 0x08:
+			r := []rune(string(e.inputBytes))
+			if len(r) > 0 {
+				e.inputBytes = []byte(string(r[:len(r)-1]))
+			}
+		case b < 0x20:
+		default:
+			e.inputBytes = append(e.inputBytes, b)
+		}
+	}
+	e.drawFooter()
+	e.out.Flush()
+}
+
+// ---- command palette (:) ---------------------------------------------------
+
+// palCmd is one palette entry. Names are nouns, not abbreviations: they are
+// typed rarely enough that saving three characters doesn't matter, and the
+// fuzzy filter means a few letters find any of them.
+type palCmd struct {
+	name string
+	desc string
+	run  func(e *editor) (quit bool)
+}
+
+var palette = []palCmd{
+	{"watch", "play from the cursor in mpv (no render)", func(e *editor) bool { e.wantReview = 1; return false }},
+	{"watch-all", "play the whole cut in mpv (no render)", func(e *editor) bool { e.wantReview = 2; return false }},
+	{"title-card", "insert a typst title card below the cursor", func(e *editor) bool { e.startTitleCard(); return false }},
+	{"animated-card", "insert a manim animated card below the cursor", func(e *editor) bool { e.startAnimCard(); return false }},
+	{"section", "insert a section header below the cursor", func(e *editor) bool { e.addSection(); return false }},
+	{"note", "edit the scene's note (or card text)", func(e *editor) bool { e.startEdit(); return false }},
+	{"duration", "edit the scene's duration (gain on beds)", func(e *editor) bool { e.startDurEdit(); return false }},
+	{"search", "find scenes by file name or note", func(e *editor) bool { e.startSearch(); return false }},
+	{"delete", "cut the marked scenes (or the current one)", func(e *editor) bool { e.deleteSel(); return false }},
+	{"yank", "copy the marked scenes (or the current one)", func(e *editor) bool { e.yank(); return false }},
+	{"paste", "paste the cut/yanked scenes below the cursor", func(e *editor) bool { e.paste(); return false }},
+	{"undo", "undo the last change", func(e *editor) bool { e.undoOp(); return false }},
+	{"redo", "redo an undone change", func(e *editor) bool { e.redoOp(); return false }},
+	{"vim", "edit the sequence file in vim", func(e *editor) bool { e.wantVim = true; return false }},
+	{"snapshots", "the git version graph (Tab does this too)", func(e *editor) bool { e.openSnapshots(); return false }},
+	{"help", "the key reference", func(e *editor) bool { e.helpOpen = true; return false }},
+	{"top", "jump to the first scene", func(e *editor) bool { e.cursor = 0; return false }},
+	{"bottom", "jump to the last scene", func(e *editor) bool {
+		if len(e.items) > 0 {
+			e.cursor = len(e.items) - 1
+		}
+		return false
+	}},
+	{"save", "write the sequence file", func(e *editor) bool { e.saveOp(); return false }},
+	{"quit", "leave, saving if dirty", func(e *editor) bool { return true }},
+	{"quit-discard", "leave without saving", func(e *editor) bool { e.discard = true; return true }},
+}
+
+// fuzzyRank scores a candidate against the query: -1 no match, lower is
+// better (prefix beats substring beats scattered subsequence).
+func fuzzyRank(name, q string) int {
+	if q == "" {
+		return 2
+	}
+	if strings.HasPrefix(name, q) {
+		return 0
+	}
+	if strings.Contains(name, q) {
+		return 1
+	}
+	i := 0
+	for _, r := range name {
+		if i < len(q) && byte(r) == q[i] {
+			i++
+		}
+	}
+	if i == len(q) {
+		return 2
+	}
+	return -1
+}
+
+func (e *editor) paletteMatches() []palCmd {
+	q := strings.ToLower(strings.TrimSpace(string(e.inputBytes)))
+	var out []palCmd
+	for rank := 0; rank <= 2; rank++ {
+		for _, c := range palette {
+			if fuzzyRank(c.name, q) == rank {
+				out = append(out, c)
+			}
+		}
+		if q == "" {
+			break // empty query already collected everything at rank 2
+		}
+	}
+	return out
+}
+
+func (e *editor) handlePalette(chunk []byte) (quit bool) {
+	for _, b := range chunk {
+		switch {
+		case b == 0x1b:
+			e.mode = modeNormal
+			e.inputBytes = nil
+			e.redraw(true)
+			e.onSceneChange()
+			e.out.Flush()
+			return false
+		case b == '\r' || b == '\n':
+			m := e.paletteMatches()
+			e.mode = modeNormal
+			e.inputBytes = nil
+			e.redraw(true)
+			if len(m) == 0 {
+				e.status = "no such command (: again, or ? for keys)"
+				e.drawAll()
+				e.out.Flush()
+				return false
+			}
+			sel := e.palSel
+			if sel >= len(m) {
+				sel = 0
+			}
+			e.status = ""
+			quit = m[sel].run(e)
+			if e.mode == modePalette { // a command can't reopen the palette
+				e.mode = modeNormal
+			}
+			if !quit && e.mode == modeNormal && e.screen == 0 && !e.helpOpen {
+				e.clampCursor()
+				e.drawAll()
+				e.onSceneChange()
+			}
+			if e.helpOpen {
+				e.drawHelp()
+			}
+			if e.mode != modeNormal {
+				e.drawFooter()
+			}
+			e.out.Flush()
+			return quit
+		case b == 0x0e || b == 0x09: // ctrl-n / Tab: next match
+			e.palSel++
+		case b == 0x10: // ctrl-p: previous match
+			if e.palSel > 0 {
+				e.palSel--
+			}
+		case b == 0x7f || b == 0x08:
+			r := []rune(string(e.inputBytes))
+			if len(r) > 0 {
+				e.inputBytes = []byte(string(r[:len(r)-1]))
+			}
+			e.palSel = 0
+		case b < 0x20:
+		default:
+			e.inputBytes = append(e.inputBytes, b)
+			e.palSel = 0
+		}
+	}
+	e.drawAll()
+	e.drawPalette()
+	e.out.Flush()
+	return false
+}
+
+// drawPalette paints the ':' prompt and the ranked matches above the footer.
+func (e *editor) drawPalette() {
+	m := e.paletteMatches()
+	show := len(m)
+	if show > 8 {
+		show = 8
+	}
+	if e.palSel >= len(m) && len(m) > 0 {
+		e.palSel = len(m) - 1
+	}
+	boxW := e.w * 2 / 3
+	if boxW < 40 {
+		boxW = min(e.w-2, 40)
+	}
+	col := (e.w - boxW) / 2
+	if col < 1 {
+		col = 1
+	}
+	top := e.h - show - 3
+	if top < 1 {
+		top = 1
+	}
+	if e.kitty {
+		kittyDeleteAll(e.out)
+	}
+	e.put(top, col, "\x1b[7m"+padRight(trunc(" : "+string(e.inputBytes)+"▏", boxW), boxW)+"\x1b[0m")
+	for i := 0; i < show; i++ {
+		line := fmt.Sprintf(" %-14s %s", m[i].name, m[i].desc)
+		style := "\x1b[2m"
+		if i == e.palSel {
+			style = "\x1b[7m"
+		}
+		e.put(top+1+i, col, style+padRight(trunc(line, boxW), boxW)+"\x1b[0m")
+	}
+	if show == 0 {
+		e.put(top+1, col, "\x1b[2m"+padRight(trunc(" no matching command", boxW), boxW)+"\x1b[0m")
+	}
 }
 
 // ---- operations -----------------------------------------------------------
@@ -434,18 +783,22 @@ func (e *editor) deleteSel() {
 	e.pushUndo()
 	if e.anyMarked() {
 		kept := e.items[:0:0]
+		var cut []model.SequenceItem
 		for i, it := range e.items {
-			if !e.marked[i] {
+			if e.marked[i] {
+				cut = append(cut, it)
+			} else {
 				kept = append(kept, it)
 			}
 		}
-		n := len(e.items) - len(kept)
 		e.items = kept
 		e.marked = map[int]bool{}
-		e.status = fmt.Sprintf("deleted %d scene(s)", n)
+		e.clipboard = cut
+		e.status = fmt.Sprintf("cut %d scene(s) · p pastes them back", len(cut))
 	} else {
+		e.clipboard = []model.SequenceItem{e.items[e.cursor]}
 		e.items = append(e.items[:e.cursor], e.items[e.cursor+1:]...)
-		e.status = "deleted scene"
+		e.status = "cut scene · p pastes it back"
 	}
 	e.clampCursor()
 	e.dirty = true
@@ -457,6 +810,7 @@ func (e *editor) undoOp() {
 		e.status = "nothing to undo"
 		return
 	}
+	e.redoStack = append(e.redoStack, e.snapshotItems())
 	last := len(e.undo) - 1
 	e.items = e.undo[last]
 	e.undo = e.undo[:last]
@@ -464,7 +818,31 @@ func (e *editor) undoOp() {
 	e.clampCursor()
 	e.dirty = true
 	e.forceScene = true
-	e.status = "undo"
+	e.status = "undo (^R redoes)"
+}
+
+func (e *editor) redoOp() {
+	if len(e.redoStack) == 0 {
+		e.status = "nothing to redo"
+		return
+	}
+	// Straight onto the undo stack, not through pushUndo: pushUndo would
+	// clear the redo history we are in the middle of walking.
+	e.undo = append(e.undo, e.snapshotItems())
+	last := len(e.redoStack) - 1
+	e.items = e.redoStack[last]
+	e.redoStack = e.redoStack[:last]
+	e.marked = map[int]bool{}
+	e.clampCursor()
+	e.dirty = true
+	e.forceScene = true
+	e.status = "redo"
+}
+
+func (e *editor) snapshotItems() []model.SequenceItem {
+	cp := make([]model.SequenceItem, len(e.items))
+	copy(cp, e.items)
+	return cp
 }
 
 func (e *editor) saveOp() {
@@ -480,26 +858,156 @@ func (e *editor) startEdit() {
 		return
 	}
 	e.mode = modeEdit
-	e.editDur = false
+	e.editWhat = editNote
 	e.inputBytes = []byte(e.items[e.cursor].Note)
 }
 
-// startDurEdit edits a still image's on-screen duration. Clips set their length
-// via their in/out (⏎ → mpv), and sections have none — so this is image-only.
+// startDurEdit edits the number that shapes the current item: a still's or
+// title card's on-screen duration, an overlay's duration, or a bed's gain.
+// Clips set their length via their in/out (⏎ → mpv), and sections have none.
 func (e *editor) startDurEdit() {
 	if len(e.items) == 0 {
 		return
 	}
 	switch e.items[e.cursor].Kind {
-	case model.KindImage:
+	case model.KindImage, model.KindTitle, model.KindOverlay:
 		e.mode = modeEdit
-		e.editDur = true
+		e.editWhat = editDur
 		e.inputBytes = []byte(trimf(e.items[e.cursor].Dur))
+	case model.KindAudio:
+		e.mode = modeEdit
+		e.editWhat = editGain
+		e.inputBytes = []byte(trimf(e.items[e.cursor].Gain))
 	case model.KindSection:
 		e.status = "sections have no duration"
 	default:
-		e.status = "use ⏎ to set a clip's in/out"
+		e.status = "use ⏎ to set a clip's in/out (or +/- to nudge the out point)"
 	}
+}
+
+// nudge is the no-typing fine adjust: out point ±0.5s on clips, duration
+// ±0.5s on stills/cards/overlays, gain ±1dB on beds.
+func (e *editor) nudge(dir float64) {
+	if len(e.items) == 0 {
+		return
+	}
+	it := &e.items[e.cursor]
+	switch it.Kind {
+	case model.KindSection:
+		e.status = "sections have nothing to nudge"
+		return
+	case model.KindImage, model.KindTitle, model.KindOverlay:
+		e.pushUndo()
+		it.Dur += dir * 0.5
+		if it.Dur < 0.5 {
+			it.Dur = 0.5
+		}
+		e.status = fmt.Sprintf("duration %ss · w to save", trimf(it.Dur))
+	case model.KindAudio:
+		e.pushUndo()
+		it.Gain += dir
+		e.status = fmt.Sprintf("gain %sdB · w to save", trimf(it.Gain))
+	default:
+		e.pushUndo()
+		out := it.Out + dir*0.5
+		if out < it.In+0.1 {
+			out = it.In + 0.1
+		}
+		it.Out = out
+		e.status = fmt.Sprintf("out %s (%ss) · w to save", mmss(it.Out), trimf(it.Duration()))
+	}
+	e.dirty = true
+	e.forceScene = true
+}
+
+// jumpSection moves the cursor to the previous/next section header (or the
+// ends of the list when there is none in that direction).
+func (e *editor) jumpSection(dir int) {
+	if len(e.items) == 0 {
+		return
+	}
+	for i := e.cursor + dir; i >= 0 && i < len(e.items); i += dir {
+		if e.items[i].IsSection() {
+			e.cursor = i
+			return
+		}
+	}
+	if dir < 0 {
+		e.cursor = 0
+	} else {
+		e.cursor = len(e.items) - 1
+	}
+}
+
+func (e *editor) startSearch() {
+	e.mode = modeSearch
+	e.inputBytes = nil
+}
+
+// findNext jumps to the next item (wrapping) whose file or note matches the
+// last search, in either direction.
+func (e *editor) findNext(dir int) {
+	q := strings.ToLower(e.lastSearch)
+	if q == "" {
+		e.status = "no search yet (press / )"
+		return
+	}
+	n := len(e.items)
+	for step := 1; step <= n; step++ {
+		i := ((e.cursor+dir*step)%n + n) % n
+		it := e.items[i]
+		if strings.Contains(strings.ToLower(it.File), q) ||
+			strings.Contains(strings.ToLower(it.Note), q) {
+			e.cursor = i
+			e.forceScene = true
+			e.status = fmt.Sprintf("match: %q · n/N for next/prev", e.lastSearch)
+			return
+		}
+	}
+	e.status = fmt.Sprintf("no match for %q", e.lastSearch)
+}
+
+// yank copies the marked scenes (or the current one) without deleting.
+func (e *editor) yank() {
+	if len(e.items) == 0 {
+		return
+	}
+	var cp []model.SequenceItem
+	if e.anyMarked() {
+		for i, it := range e.items {
+			if e.marked[i] {
+				cp = append(cp, it)
+			}
+		}
+	} else {
+		cp = append(cp, e.items[e.cursor])
+	}
+	e.clipboard = cp
+	e.status = fmt.Sprintf("yanked %d scene(s) · p to paste", len(cp))
+}
+
+// paste inserts the clipboard below the cursor (vim's p).
+func (e *editor) paste() {
+	if len(e.clipboard) == 0 {
+		e.status = "nothing to paste (d cuts, y copies)"
+		return
+	}
+	e.pushUndo()
+	at := e.cursor + 1
+	if len(e.items) == 0 {
+		at = 0
+	}
+	if at > len(e.items) {
+		at = len(e.items)
+	}
+	ins := make([]model.SequenceItem, len(e.clipboard))
+	copy(ins, e.clipboard)
+	e.items = append(e.items[:at], append(ins, e.items[at:]...)...)
+	e.cursor = at
+	e.marked = map[int]bool{} // index-based marks would misalign
+	e.dirty = true
+	e.forceScene = true
+	e.status = fmt.Sprintf("pasted %d scene(s)", len(ins))
 }
 
 // addSection inserts a new "folder" header just below the cursor (or at the top
@@ -527,8 +1035,24 @@ func (e *editor) addSection() {
 }
 
 func (e *editor) commitEdit() {
-	if e.editDur {
+	switch e.editWhat {
+	case editDur:
 		e.commitDur()
+		return
+	case editGain:
+		e.commitGain()
+		return
+	case editTitleTemplate:
+		e.commitTitleTemplate()
+		return
+	case editTitleText:
+		e.commitTitleText()
+		return
+	case editAnimTemplate:
+		e.commitAnimTemplate()
+		return
+	case editAnimText:
+		e.commitAnimText()
 		return
 	}
 	e.pushUndo()
@@ -538,9 +1062,9 @@ func (e *editor) commitEdit() {
 	e.mode = modeNormal
 	e.dirty = true
 	if isSection {
-		e.status = "section title set — w to save"
+		e.status = "section title set · w to save"
 	} else {
-		e.status = "note updated — w to save"
+		e.status = "note updated · w to save"
 	}
 }
 
@@ -549,7 +1073,7 @@ func (e *editor) commitEdit() {
 func (e *editor) commitDur() {
 	secs, err := model.ParseSeconds(string(e.inputBytes))
 	e.mode = modeNormal
-	e.editDur = false
+	e.editWhat = editNote
 	e.inputBytes = nil
 	if err != nil || secs <= 0 {
 		e.status = "duration unchanged (want a positive number of seconds)"
@@ -559,7 +1083,292 @@ func (e *editor) commitDur() {
 	e.items[e.cursor].Dur = secs
 	e.dirty = true
 	e.forceScene = true
-	e.status = fmt.Sprintf("duration → %ss — w to save", trimf(secs))
+	e.status = fmt.Sprintf("duration %ss · w to save", trimf(secs))
+}
+
+// commitGain parses the inline input as a bed gain in dB (negative is normal
+// for music under a voice).
+func (e *editor) commitGain() {
+	db, err := model.ParseSeconds(string(e.inputBytes))
+	e.mode = modeNormal
+	e.editWhat = editNote
+	e.inputBytes = nil
+	if err != nil {
+		e.status = "gain unchanged (want dB, e.g. -12)"
+		return
+	}
+	e.pushUndo()
+	e.items[e.cursor].Gain = db
+	e.dirty = true
+	e.forceScene = true
+	e.status = fmt.Sprintf("gain %sdB · w to save", trimf(db))
+}
+
+// ---- title cards (T) -------------------------------------------------------
+
+// startTitleCard begins the two-step card wizard: template, then text. The
+// last-used template is prefilled, so reusing a style is Enter + type text.
+func (e *editor) startTitleCard() {
+	if created, err := typst.EnsureDefault(e.p); err != nil {
+		e.status = "titles: " + err.Error()
+		return
+	} else if created != "" {
+		e.status = "created titles/" + created + " (edit it for your style)"
+	}
+	tpl := e.lastTemplate
+	if tpl == "" {
+		if ts, _ := typst.Templates(e.p); len(ts) > 0 {
+			tpl = ts[0]
+		}
+	}
+	e.mode = modeEdit
+	e.editWhat = editTitleTemplate
+	e.inputBytes = []byte(tpl)
+}
+
+func (e *editor) commitTitleTemplate() {
+	tpl := strings.TrimSpace(string(e.inputBytes))
+	if _, err := typst.Resolve(e.p, tpl); err != nil {
+		ts, _ := typst.Templates(e.p)
+		e.status = fmt.Sprintf("no template %q (have: %s)", tpl, strings.Join(ts, " "))
+		e.inputBytes = nil // stay in the prompt for another try
+		return
+	}
+	e.lastTemplate = typst.StoreName(tpl)
+	e.editWhat = editTitleText
+	e.inputBytes = nil
+}
+
+func (e *editor) commitTitleText() {
+	text := strings.TrimSpace(string(e.inputBytes))
+	e.mode = modeNormal
+	e.editWhat = editNote
+	e.inputBytes = nil
+	if text == "" {
+		e.status = "title card cancelled (no text)"
+		return
+	}
+	e.pushUndo()
+	at := e.cursor + 1
+	if len(e.items) == 0 {
+		at = 0
+	}
+	if at > len(e.items) {
+		at = len(e.items)
+	}
+	it := model.SequenceItem{Kind: model.KindTitle, File: e.lastTemplate, Dur: 4, Note: text}
+	e.items = append(e.items, model.SequenceItem{})
+	copy(e.items[at+1:], e.items[at:])
+	e.items[at] = it
+	e.cursor = at
+	e.marked = map[int]bool{}
+	e.dirty = true
+	e.forceScene = true
+	e.status = fmt.Sprintf("card %q added (4s · t to change · T reuses %s) · w to save", text, e.lastTemplate)
+}
+
+// ---- animated cards (A) ----------------------------------------------------
+
+// startAnimCard mirrors the title-card wizard for manim templates. The render
+// itself happens suspended (it takes real time and prints progress).
+func (e *editor) startAnimCard() {
+	if created, err := manim.EnsureDefault(e.p); err != nil {
+		e.status = "anims: " + err.Error()
+		return
+	} else if created != "" {
+		e.status = "created anims/" + created + " (edit it for your style)"
+	}
+	tpl := e.lastAnimTemplate
+	if tpl == "" {
+		if ts, _ := manim.Templates(e.p); len(ts) > 0 {
+			tpl = ts[0]
+		}
+	}
+	e.mode = modeEdit
+	e.editWhat = editAnimTemplate
+	e.inputBytes = []byte(tpl)
+}
+
+func (e *editor) commitAnimTemplate() {
+	tpl := strings.TrimSpace(string(e.inputBytes))
+	if _, err := manim.Resolve(e.p, tpl); err != nil {
+		ts, _ := manim.Templates(e.p)
+		e.status = fmt.Sprintf("no anim template %q (have: %s)", tpl, strings.Join(ts, " "))
+		e.inputBytes = nil // stay in the prompt for another try
+		return
+	}
+	e.lastAnimTemplate = manim.StoreName(tpl)
+	e.editWhat = editAnimText
+	e.inputBytes = nil
+}
+
+func (e *editor) commitAnimText() {
+	text := strings.TrimSpace(string(e.inputBytes))
+	e.mode = modeNormal
+	e.editWhat = editNote
+	e.inputBytes = nil
+	if text == "" {
+		e.status = "animated card cancelled (no text)"
+		return
+	}
+	e.pendingAnimTpl, e.pendingAnimText = e.lastAnimTemplate, text
+	e.wantAnim = true // the Edit loop renders it suspended, then inserts
+}
+
+// animRenderOp runs the manim render with the terminal handed over (progress
+// is visible, like vim or mpv), then inserts the finished card at the cursor.
+func (e *editor) animRenderOp(st *xterm.State) {
+	tpl, text := e.pendingAnimTpl, e.pendingAnimText
+	e.pendingAnimTpl, e.pendingAnimText = "", ""
+
+	e.suspend(st)
+	fmt.Printf("rendering animated card %q with %s (cached afterwards)…\n", text, tpl)
+	clip, err := manim.Render(e.p, tpl, text)
+	var dur float64
+	if err == nil {
+		dur, err = manim.Probe(clip)
+	}
+	e.resume(st)
+
+	if err != nil {
+		e.status = "anim: " + err.Error()
+	} else {
+		e.pushUndo()
+		at := e.cursor + 1
+		if len(e.items) == 0 {
+			at = 0
+		}
+		if at > len(e.items) {
+			at = len(e.items)
+		}
+		it := model.SequenceItem{Kind: model.KindAnim, File: tpl, Dur: roundCenti(dur), Note: text}
+		e.items = append(e.items, model.SequenceItem{})
+		copy(e.items[at+1:], e.items[at:])
+		e.items[at] = it
+		e.cursor = at
+		e.marked = map[int]bool{}
+		e.dirty = true
+		e.forceScene = true
+		e.status = fmt.Sprintf("animated card %q added (%ss) · w to save", text, trimf(it.Dur))
+	}
+	e.redraw(true)
+	e.onSceneChange()
+	e.out.Flush()
+}
+
+func roundCenti(f float64) float64 { return float64(int64(f*100+0.5)) / 100 }
+
+// ---- watch the cut (r / R) -------------------------------------------------
+
+// reviewOp plays the current in-memory cut (saved or not) as a simulated
+// export: r from the cursor's scene, R from the top. mpv opens its own
+// window; the editor never closes or blocks.
+func (e *editor) reviewOp(whole bool) {
+	if len(e.items) == 0 {
+		return
+	}
+	from := 0
+	if !whole {
+		from = e.cursor
+	}
+	if err := mpv.ReviewDetached(e.p, e.name, e.items, from); err != nil {
+		e.status = "mpv: " + err.Error()
+	} else if whole {
+		e.status = "playing the whole cut in an mpv window (nothing rendered)"
+	} else {
+		e.status = "playing from the cursor in an mpv window (nothing rendered)"
+	}
+	e.drawAll()
+	e.out.Flush()
+}
+
+// ---- snapshots tab (Tab) ---------------------------------------------------
+
+// openSnapshots loads the git branch graph for the project and switches to
+// the read-only snapshots screen. Snapshots stay plain git: branch and merge
+// with git itself; this tab is for SEEING the versions.
+func (e *editor) openSnapshots() {
+	e.snapLines = nil
+	e.snapTop = 0
+	if _, err := os.Stat(filepath.Join(e.p.Root, ".git")); err != nil {
+		e.snapLines = []string{
+			"no snapshots yet.",
+			"",
+			"take one from the shell:  movielily snapshot \"first cut\"",
+			"exports auto-snapshot once a repo exists.",
+		}
+	} else {
+		branch := gitOut(e.p.Root, "rev-parse", "--abbrev-ref", "HEAD")
+		graph := gitOut(e.p.Root, "log", "--graph", "--all", "--decorate",
+			"--date=format:%Y-%m-%d %H:%M", "--pretty=format:%h %ad %d %s", "-n", "300")
+		if graph == "" {
+			graph = "(no snapshots on any branch yet)"
+		}
+		e.snapLines = append(e.snapLines, "on branch: "+branch, "")
+		e.snapLines = append(e.snapLines, strings.Split(graph, "\n")...)
+	}
+	e.screen = 1
+	e.drawSnapshots()
+	e.out.Flush()
+}
+
+func gitOut(root string, args ...string) string {
+	out, err := exec.Command("git", append([]string{"-C", root}, args...)...).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimRight(string(out), "\n")
+}
+
+func (e *editor) handleSnapshots(chunk []byte) {
+	for _, b := range chunk {
+		switch b {
+		case 'j':
+			if e.snapTop < len(e.snapLines)-1 {
+				e.snapTop++
+			}
+		case 'k':
+			if e.snapTop > 0 {
+				e.snapTop--
+			}
+		case 'g':
+			e.snapTop = 0
+		case 'G':
+			e.snapTop = max(0, len(e.snapLines)-(e.h-2))
+		case 0x09, 'q', 0x1b: // Tab, q or Esc: back to the editor
+			e.screen = 0
+			e.redraw(true)
+			e.onSceneChange()
+			e.out.Flush()
+			return
+		}
+	}
+	e.drawSnapshots()
+	e.out.Flush()
+}
+
+func (e *editor) drawSnapshots() {
+	io.WriteString(e.out, clearScreen)
+	if e.kitty {
+		kittyDeleteAll(e.out)
+	}
+	head := fmt.Sprintf(" snapshots · %s · every commit is a version of the movie", e.p.Config.Name)
+	io.WriteString(e.out, moveTo(1, 1)+"\x1b[7m"+padRight(trunc(head, e.w), e.w)+"\x1b[0m")
+	rows := e.h - 2
+	for i := 0; i < rows; i++ {
+		idx := e.snapTop + i
+		line := ""
+		if idx < len(e.snapLines) {
+			line = e.snapLines[idx]
+		}
+		style := ""
+		if strings.Contains(line, "(") && strings.Contains(line, "->") {
+			style = "\x1b[33m" // branch/HEAD decorations pop in yellow
+		}
+		io.WriteString(e.out, moveTo(2+i, 1)+style+visPad(trunc(line, e.w), e.w)+"\x1b[0m")
+	}
+	foot := " j/k scroll · Tab/q back · branch & merge with plain git (footage never enters the repo)"
+	io.WriteString(e.out, moveTo(e.h, 1)+"\x1b[7m"+padRight(trunc(foot, e.w), e.w)+"\x1b[0m")
 }
 
 // sectionStats counts the playable scenes that fall under the section at idx
@@ -596,12 +1405,11 @@ func (e *editor) anyMarked() bool {
 }
 
 func (e *editor) pushUndo() {
-	cp := make([]model.SequenceItem, len(e.items))
-	copy(cp, e.items)
-	e.undo = append(e.undo, cp)
+	e.undo = append(e.undo, e.snapshotItems())
 	if len(e.undo) > 100 {
 		e.undo = e.undo[1:]
 	}
+	e.redoStack = nil // a fresh edit invalidates the redo line
 }
 
 func (e *editor) save() error {
@@ -697,10 +1505,27 @@ func (e *editor) openInVim(st *xterm.State) error {
 	return nil
 }
 
-// reselect plays the current scene's full source clip in mpv so its in/out can
-// be redone (Enter in the list). Sections and stills have no trim to redo.
-func (e *editor) reselect(st *xterm.State) {
+// reselectRes carries a confirmed mpv redo-in/out back into the main loop.
+type reselectRes struct {
+	idx     int
+	file    string
+	in, out float64
+	ok      bool
+	err     error
+}
+
+// reselect plays the current scene's full source clip in mpv so its in/out
+// can be redone (Enter in the list). mpv opens its OWN window and the editor
+// stays fully usable; the confirmed trim lands back via reselectCh. Sections
+// and stills have no trim to redo.
+func (e *editor) reselect() {
 	if len(e.items) == 0 {
+		return
+	}
+	if e.reselectBusy {
+		e.status = "an mpv redo in/out is already open (confirm or close it first)"
+		e.drawAll()
+		e.out.Flush()
 		return
 	}
 	it := e.items[e.cursor]
@@ -711,30 +1536,75 @@ func (e *editor) reselect(st *xterm.State) {
 		e.out.Flush()
 		return
 	case it.Kind == model.KindImage:
-		e.status = "stills have no in/out — press t to set the duration"
+		e.status = "stills have no in/out · t sets the duration"
+		e.drawAll()
+		e.out.Flush()
+		return
+	case it.Kind == model.KindAudio:
+		e.status = "audio beds have no in/out, they run under the whole export"
+		e.drawAll()
+		e.out.Flush()
+		return
+	case it.Kind == model.KindTitle:
+		e.status = "title cards have no in/out · t duration · e text"
+		e.drawAll()
+		e.out.Flush()
+		return
+	case it.Kind == model.KindAnim:
+		e.status = "animated cards have no in/out · their length is the animation's"
+		e.drawAll()
+		e.out.Flush()
+		return
+	case it.Kind == model.KindOverlay:
+		e.status = "overlays ride the scene above · t duration · e note"
 		e.drawAll()
 		e.out.Flush()
 		return
 	}
 
-	e.suspend(st)
-	in, out, ok, err := mpv.Reselect(e.p, it.File, it.In, it.Out)
-	e.resume(st)
+	e.reselectBusy = true
+	idx, file := e.cursor, it.File
+	go func(in, out float64) {
+		nin, nout, ok, err := mpv.Reselect(e.p, file, in, out)
+		e.reselectCh <- reselectRes{idx: idx, file: file, in: nin, out: nout, ok: ok, err: err}
+	}(it.In, it.Out)
+	e.status = "mpv opened: i/o set in/out, Enter confirms · the editor stays live"
+	e.drawAll()
+	e.out.Flush()
+}
 
+// applyReselect lands a finished redo-in/out. The list may have changed while
+// mpv was open, so the scene is re-found by index/file before applying.
+func (e *editor) applyReselect(r reselectRes) {
+	e.reselectBusy = false
 	switch {
-	case err != nil:
-		e.status = "mpv: " + err.Error()
-	case ok:
-		e.pushUndo()
-		e.items[e.cursor].In = in
-		e.items[e.cursor].Out = out
-		e.dirty = true
-		e.status = fmt.Sprintf("in/out → %s–%s — w to save", mmss(in), mmss(out))
-	default:
+	case r.err != nil:
+		e.status = "mpv: " + r.err.Error()
+	case !r.ok:
 		e.status = "in/out unchanged"
+	default:
+		idx := r.idx
+		if idx >= len(e.items) || e.items[idx].File != r.file {
+			idx = -1
+			for i, it := range e.items { // the scene moved; find it again
+				if it.Kind == model.KindVideo && it.File == r.file {
+					idx = i
+					break
+				}
+			}
+		}
+		if idx < 0 {
+			e.status = "trim confirmed but the scene is gone (nothing applied)"
+		} else {
+			e.pushUndo()
+			e.items[idx].In = r.in
+			e.items[idx].Out = r.out
+			e.dirty = true
+			e.forceScene = true
+			e.status = fmt.Sprintf("in/out %s–%s · w to save", mmss(r.in), mmss(r.out))
+		}
 	}
-
-	e.redraw(true)
+	e.drawAll()
 	e.onSceneChange()
 	e.out.Flush()
 }
@@ -768,17 +1638,54 @@ func (e *editor) requestPreview() {
 		return
 	}
 	it := e.items[e.cursor]
-	if it.IsSection() {
+	if it.IsSection() || it.IsAudio() {
 		return
 	}
-	abs, err := e.p.ResolveFootage(it.File)
-	if err != nil {
-		return
-	}
-	req := previewReq{gen: e.gen, isImage: it.Kind == model.KindImage}
-	if it.Kind == model.KindImage {
-		req.firstSrc, req.firstAt = abs, 0
-	} else {
+	req := previewReq{gen: e.gen}
+	switch {
+	case it.Kind == model.KindTitle:
+		// Rendered (or fetched from cache) by the preview goroutine.
+		req.isImage = true
+		req.titleTpl, req.titleText = it.File, it.Note
+	case it.Kind == model.KindAnim:
+		// Only preview an ALREADY rendered card; a cursor movement must
+		// never kick off a heavy manim render in the background.
+		clip, ok := manim.Cached(e.p, it.File, it.Note)
+		if !ok {
+			return
+		}
+		req.firstSrc, req.firstAt = clip, 0
+		last := it.Dur - 0.05
+		if last < 0 {
+			last = 0
+		}
+		req.lastSrc, req.lastAt = clip, last
+	case it.Kind == model.KindOverlay:
+		abs, err := e.p.ResolveFootage(it.File)
+		if err != nil {
+			return
+		}
+		req.isImage = true
+		req.firstSrc = abs
+	case it.Kind == model.KindImage:
+		abs, err := e.p.ResolveFootage(it.File)
+		if err != nil {
+			return
+		}
+		req.isImage = true
+		req.firstSrc = abs
+	case model.IsAudioFile(it.File):
+		abs, err := e.p.ResolveFootage(it.File)
+		if err != nil {
+			return
+		}
+		req.wave = true
+		req.firstSrc, req.waveIn, req.waveOut = abs, it.In, it.Out
+	default:
+		abs, err := e.p.ResolveFootage(it.File)
+		if err != nil {
+			return
+		}
 		req.firstSrc, req.firstAt = abs, it.In
 		last := it.Out - 0.05
 		if last < it.In {
@@ -806,11 +1713,20 @@ func (e *editor) previewLoop() {
 			}
 		}
 		res := previewRes{gen: req.gen}
-		if req.firstSrc != "" {
-			res.first = e.thumb(req.firstSrc, req.firstAt, req.isImage)
-		}
-		if req.lastSrc != "" {
-			res.last = e.thumb(req.lastSrc, req.lastAt, req.isImage)
+		switch {
+		case req.titleTpl != "":
+			if png, err := typst.Render(e.p, req.titleTpl, req.titleText); err == nil {
+				res.first = e.thumb(png, 0, true)
+			}
+		case req.wave:
+			res.first = e.waveThumb(req.firstSrc, req.waveIn, req.waveOut)
+		default:
+			if req.firstSrc != "" {
+				res.first = e.thumb(req.firstSrc, req.firstAt, req.isImage)
+			}
+			if req.lastSrc != "" {
+				res.last = e.thumb(req.lastSrc, req.lastAt, req.isImage)
+			}
 		}
 		e.resCh <- res
 	}
@@ -829,6 +1745,21 @@ func (e *editor) thumb(src string, at float64, isImage bool) string {
 	}
 	e.cache[key] = out
 	return out
+}
+
+func (e *editor) waveThumb(src string, in, out float64) string {
+	key := fmt.Sprintf("wave|%s@%s-%s", src, model.FormatSeconds(in), model.FormatSeconds(out))
+	if p, ok := e.cache[key]; ok {
+		return p
+	}
+	h := fnv.New32a()
+	h.Write([]byte(key))
+	png := filepath.Join(e.tmpDir, fmt.Sprintf("%08x.png", h.Sum32()))
+	if err := ffmpeg.Waveform(src, in, out, png); err != nil {
+		return ""
+	}
+	e.cache[key] = png
+	return png
 }
 
 // ---- rendering ------------------------------------------------------------
@@ -909,21 +1840,86 @@ func (e *editor) drawHeader() {
 func (e *editor) drawFooter() {
 	var s string
 	switch {
+	case e.mode == modeSearch:
+		s = " search ▸ " + string(e.inputBytes) + "▏"
 	case e.mode == modeEdit:
 		label := "note"
-		switch {
-		case e.editDur:
+		switch e.editWhat {
+		case editDur:
 			label = "duration (s)"
-		case len(e.items) > 0 && e.items[e.cursor].IsSection():
-			label = "title"
+		case editGain:
+			label = "gain (dB)"
+		case editTitleTemplate:
+			label = "card template (Enter accepts)"
+		case editTitleText:
+			label = "card text"
+		case editAnimTemplate:
+			label = "anim template (Enter accepts)"
+		case editAnimText:
+			label = "anim text"
+		default:
+			if len(e.items) > 0 && e.items[e.cursor].IsSection() {
+				label = "title"
+			}
 		}
 		s = " " + label + " ▸ " + string(e.inputBytes) + "▏"
 	case e.status != "":
 		s = " " + e.status
 	default:
-		s = " j/k move · J/K reorder · ⏎ redo in/out · e note · t still-dur · o section · v vim · space mark · d del · u undo · w save · q quit"
+		s = " ? help · : commands · j/k · ⏎ in/out · r watch · T card · e note · t number · d/p cut/paste · w save · q quit"
 	}
 	io.WriteString(e.out, moveTo(e.h, 1)+"\x1b[7m"+padRight(trunc(s, e.w), e.w)+"\x1b[0m")
+}
+
+// drawHelp paints the key reference over the list; any key closes it.
+func (e *editor) drawHelp() {
+	lines := []string{
+		"  movielily edit · keys                                ",
+		"                                                       ",
+		"  j/k ↑/↓  move            ⏎    replay clip, redo in/out",
+		"  J/K      reorder         +/-  nudge out/duration/gain ",
+		"  g/G      top / bottom    t    duration (gain on beds) ",
+		"  [/]      prev/next sect  e    edit note or card text  ",
+		"  space    mark            y    yank marked/current     ",
+		"  d        cut             p    paste below cursor      ",
+		"  /        search          n/N  next / prev match       ",
+		"  r        watch from here (simulated export, no render)",
+		"  R        watch the whole cut                          ",
+		"  T        title card      A    animated card           ",
+		"  o        new section     v    edit the file in vim    ",
+		"  u        undo            ^R   redo                    ",
+		"  Tab      snapshots tab (git branch graph)             ",
+		"  :        command palette (fuzzy: type a few letters)  ",
+		"  w        save            q/Q  quit (save / discard)   ",
+		"                                                       ",
+		"  any key closes this                                   ",
+	}
+	boxW := 0
+	for _, l := range lines {
+		if n := len([]rune(l)); n > boxW {
+			boxW = n
+		}
+	}
+	if boxW > e.w-2 {
+		boxW = e.w - 2
+	}
+	top := (e.h - len(lines)) / 2
+	if top < 1 {
+		top = 1
+	}
+	col := (e.w - boxW) / 2
+	if col < 1 {
+		col = 1
+	}
+	if e.kitty {
+		kittyDeleteAll(e.out)
+	}
+	for i, l := range lines {
+		if top+i > e.h {
+			break
+		}
+		e.put(top+i, col, "\x1b[7m"+padRight(trunc(l, boxW), boxW)+"\x1b[0m")
+	}
 }
 
 // span is one styled run of a list row. The text is always plain (no escapes)
@@ -936,21 +1932,18 @@ type span struct {
 }
 
 // listMetrics are the per-frame measurements that shape every row: how scenes
-// are numbered, how wide each column is, and whether the optional pacing bar
-// fits. Computed once per draw so all rows stay on one grid.
+// are numbered and how wide each column is. Computed once per draw so all
+// rows stay on one grid.
 type listMetrics struct {
 	hasSections bool
 	sceneNo     []int // item index -> 1-based scene number (0 for sections)
 	numW        int
 	fileW       int
 	indent      int
-	maxDur      float64
-	showBar     bool
-	barW        int
 }
 
 func (e *editor) metrics() listMetrics {
-	m := listMetrics{sceneNo: make([]int, len(e.items)), barW: 6}
+	m := listMetrics{sceneNo: make([]int, len(e.items))}
 	n, maxNo := 0, 0
 	for i, it := range e.items {
 		if it.IsSection() {
@@ -959,9 +1952,6 @@ func (e *editor) metrics() listMetrics {
 		}
 		n++
 		m.sceneNo[i], maxNo = n, n
-		if d := it.Duration(); d > m.maxDur {
-			m.maxDur = d
-		}
 	}
 	if m.numW = len(strconv.Itoa(maxNo)); m.numW < 2 {
 		m.numW = 2
@@ -977,9 +1967,6 @@ func (e *editor) metrics() listMetrics {
 	default:
 		m.fileW = 9
 	}
-	// Columns up to and including the duration; the bar+note share what's left.
-	fixed := m.indent + 2 + m.numW + 1 + m.fileW + 2 + 5 + 1
-	m.showBar = m.maxDur > 0 && e.leftW-fixed >= m.barW+2
 	return m
 }
 
@@ -1061,20 +2048,29 @@ func (e *editor) sceneSpans(idx int, m listMetrics) []span {
 	if e.marked[idx] {
 		sp = append(sp, span{text: "▌ ", style: "1;33"})
 	} else {
-		icon := "▶ "
-		if it.Kind == model.KindImage {
-			icon = "▦ "
+		// One glyph + one colour per kind, so the list reads at a glance:
+		// clips plain, voice green, stills magenta, cards yellow, animated
+		// cards cyan, beds blue, overlays dim magenta.
+		icon, style := "▶ ", "2"
+		switch {
+		case it.Kind == model.KindImage:
+			icon, style = "▦ ", "35"
+		case it.Kind == model.KindTitle:
+			icon, style = "▣ ", "33"
+		case it.Kind == model.KindAnim:
+			icon, style = "✦ ", "36"
+		case it.Kind == model.KindAudio:
+			icon, style = "♪ ", "34"
+		case it.Kind == model.KindOverlay:
+			icon, style = "◱ ", "2;35"
+		case model.IsAudioFile(it.File):
+			icon, style = "∿ ", "32"
 		}
-		sp = append(sp, span{text: icon, style: "2"})
+		sp = append(sp, span{text: icon, style: style})
 	}
 	sp = append(sp, span{text: padLeft(strconv.Itoa(m.sceneNo[idx]), m.numW) + " ", style: "2"})
 	sp = append(sp, span{text: padRight(it.File, m.fileW) + "  "})
 	sp = append(sp, span{text: padLeft(durLabel(it), 5) + " ", style: "2"})
-	if m.showBar {
-		filled := barFill(it.Duration(), m.maxDur, m.barW)
-		sp = append(sp, span{text: strings.Repeat("▰", filled), style: "36"})
-		sp = append(sp, span{text: strings.Repeat("▱", m.barW-filled) + " ", style: "2"})
-	}
 	return appendNoteSpans(sp, it.Note)
 }
 
@@ -1095,23 +2091,13 @@ func (e *editor) sectionSpans(idx int, m listMetrics) []span {
 }
 
 func durLabel(it model.SequenceItem) string {
+	switch it.Kind {
+	case model.KindAudio:
+		return trimf(it.Gain) + "dB"
+	case model.KindOverlay:
+		return mmss(it.Dur)
+	}
 	return mmss(it.Duration())
-}
-
-// barFill is how many of w cells a clip of length d fills relative to the
-// longest clip — a clip with any length never rounds away to nothing.
-func barFill(d, max float64, w int) int {
-	if max <= 0 {
-		return 0
-	}
-	n := int(math.Round(d / max * float64(w)))
-	if n < 1 && d > 0 {
-		n = 1
-	}
-	if n > w {
-		n = w
-	}
-	return n
 }
 
 // tagInline matches an inline #hashtag (mirrors model's tag grammar) so the
@@ -1187,8 +2173,27 @@ func (e *editor) drawRight() {
 	switch {
 	case !e.kitty:
 		e.put(e.firstLabelRow, col, "\x1b[2mpreview needs a kitty-compatible terminal\x1b[0m")
+	case it.Kind == model.KindAudio:
+		e.put(e.firstLabelRow, col, "\x1b[1;34maudio bed\x1b[0m")
+		e.put(e.firstImgRow, col, "\x1b[2mplays under the whole export\x1b[0m")
+	case it.Kind == model.KindTitle:
+		e.put(e.firstLabelRow, col, "\x1b[1;33mtitle card\x1b[0m  \x1b[2m"+trunc(it.File, 20)+"\x1b[0m")
+		e.put(e.firstImgRow, col, "\x1b[2mrendering…\x1b[0m")
+	case it.Kind == model.KindAnim:
+		e.put(e.firstLabelRow, col, "\x1b[1;36manimated card\x1b[0m  \x1b[2m"+trunc(it.File, 20)+"\x1b[0m")
+		if _, ok := manim.Cached(e.p, it.File, it.Note); ok {
+			e.put(e.firstImgRow, col, "\x1b[2mrendering…\x1b[0m")
+		} else {
+			e.put(e.firstImgRow, col, "\x1b[2mnot rendered yet (renders on export/review)\x1b[0m")
+		}
+	case it.Kind == model.KindOverlay:
+		e.put(e.firstLabelRow, col, "\x1b[1;35moverlay\x1b[0m  \x1b[2mrides the scene above\x1b[0m")
+		e.put(e.firstImgRow, col, "\x1b[2mrendering…\x1b[0m")
 	case it.Kind == model.KindImage:
-		e.put(e.firstLabelRow, col, "\x1b[1mimage\x1b[0m")
+		e.put(e.firstLabelRow, col, "\x1b[1;35mimage\x1b[0m")
+		e.put(e.firstImgRow, col, "\x1b[2mrendering…\x1b[0m")
+	case model.IsAudioFile(it.File):
+		e.put(e.firstLabelRow, col, "\x1b[1;32mvoice\x1b[0m  \x1b[2mwaveform of this segment\x1b[0m")
 		e.put(e.firstImgRow, col, "\x1b[2mrendering…\x1b[0m")
 	default:
 		e.put(e.firstLabelRow, col, "\x1b[1mfirst frame\x1b[0m  \x1b[2m"+mmss(it.In)+"\x1b[0m")
@@ -1197,12 +2202,30 @@ func (e *editor) drawRight() {
 		e.put(e.lastImgRow, col, "\x1b[2mrendering…\x1b[0m")
 	}
 
+	// Where this scene sits in the finished movie, for orientation (and for
+	// eyeballing YouTube chapter times).
+	at := 0.0
+	for i := 0; i < e.cursor && i < len(e.items); i++ {
+		at += e.items[i].Duration()
+	}
+
 	dr := e.detailsRow
 	e.put(dr, col, "\x1b[1m"+trunc(it.File, e.rightW-2)+"\x1b[0m")
-	if it.Kind == model.KindImage {
-		e.put(dr+1, col, "still · "+trimf(it.Dur)+"s")
-	} else {
-		e.put(dr+1, col, fmt.Sprintf("%s → %s  (%ss)", mmss(it.In), mmss(it.Out), trimf(it.Duration())))
+	switch {
+	case it.Kind == model.KindImage:
+		e.put(dr+1, col, fmt.Sprintf("still · %ss · at %s", trimf(it.Dur), mmss(at)))
+	case it.Kind == model.KindTitle:
+		e.put(dr+1, col, fmt.Sprintf("card · %ss · at %s", trimf(it.Dur), mmss(at)))
+	case it.Kind == model.KindAnim:
+		e.put(dr+1, col, fmt.Sprintf("anim · %ss · at %s", trimf(it.Dur), mmss(at)))
+	case it.Kind == model.KindOverlay:
+		e.put(dr+1, col, fmt.Sprintf("+%ss for %ss @ %s", trimf(it.In), trimf(it.Dur), it.Place))
+	case it.Kind == model.KindAudio:
+		e.put(dr+1, col, fmt.Sprintf("bed · %sdB · under the whole cut", trimf(it.Gain)))
+	case model.IsAudioFile(it.File):
+		e.put(dr+1, col, fmt.Sprintf("voice %s → %s  (%ss) · at %s", mmss(it.In), mmss(it.Out), trimf(it.Duration()), mmss(at)))
+	default:
+		e.put(dr+1, col, fmt.Sprintf("%s → %s  (%ss) · at %s", mmss(it.In), mmss(it.Out), trimf(it.Duration()), mmss(at)))
 	}
 	if tags := model.Tags(it.Note); len(tags) > 0 {
 		e.put(dr+2, col, "\x1b[33m"+trunc(strings.Join(tags, " "), e.rightW-2)+"\x1b[0m")
