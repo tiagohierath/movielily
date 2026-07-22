@@ -35,6 +35,11 @@ func newExportCmd() *cobra.Command {
 				return err
 			}
 			fmt.Printf("done: %s\n", args[1])
+			// Remember the last real render so `movielily youtube` (and the
+			// TUI palette) can post it without repeating the path.
+			if !draft {
+				recordLastRender(p, args[1])
+			}
 			// In a versioned project every render becomes a findable version:
 			// the snapshot ties the published file to the exact cut behind it.
 			// Projects that never opted into snapshots are left alone.

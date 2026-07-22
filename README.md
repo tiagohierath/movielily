@@ -42,6 +42,7 @@ fetched ephemerally when missing.
 | `movielily export <seq> <out.mp4> [--draft]` | render the real file (auto-snapshots; --draft = half-res quick look) |
 | `movielily chapters <seq>` | YouTube chapters from your sections, ready for the description |
 | `movielily frame <clip> <t> <out.png>` | full-resolution frame grab (thumbnails) |
+| `movielily youtube [video] [--title T]` | post the last render (or a given file) to YouTube, private, via your uploader script |
 | `movielily snapshot [message]` | commit the instructions to git (creates the repo on first use) |
 | `movielily snapshot list` · `snapshot restore <id>` | see versions · roll back (safely: it snapshots first) |
 | `movielily version` | version info |
@@ -250,6 +251,16 @@ days land at the same level.
 After exporting, `movielily chapters filme` prints the YouTube chapter list
 from your sections, and `movielily frame clip.mp4 1:02 thumb.png` grabs a
 full-resolution still for the thumbnail.
+
+## Posting to YouTube
+
+`movielily youtube` uploads the last render as a PRIVATE video (set title and
+thumbnail in YouTube Studio, publish when ready). It reuses the existing
+`navylily-tools/youtube_upload.sh` uploader (override the path with
+`MOVIELILY_YOUTUBE`); the first run does the Google OAuth flow in a browser.
+The `youtube` entry in the TUI command palette (`:`) does the same. Uploads
+track their own state under the project's `.cache/`, separate from the
+navylily daily timer.
 
 ## Snapshots and versions (git)
 

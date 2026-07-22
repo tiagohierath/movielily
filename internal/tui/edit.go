@@ -135,6 +135,7 @@ type editor struct {
 	resumeCh     chan struct{}
 	wantVim      bool
 	wantReselect bool
+	wantYoutube  bool
 
 	// layout (recomputed on resize)
 	leftW, rightW              int
@@ -291,6 +292,10 @@ func Edit(p *project.Project, name string) error {
 			if e.wantAnim {
 				e.wantAnim = false
 				e.animRenderOp(st)
+			}
+			if e.wantYoutube {
+				e.wantYoutube = false
+				e.youtubeOp(st)
 			}
 			if quit {
 				if e.dirty && !e.discard {
@@ -570,6 +575,7 @@ var palette = []palCmd{
 	{"redo", "redo an undone change", func(e *editor) bool { e.redoOp(); return false }},
 	{"vim", "edit the sequence file in vim", func(e *editor) bool { e.wantVim = true; return false }},
 	{"snapshots", "the git version graph (Tab does this too)", func(e *editor) bool { e.openSnapshots(); return false }},
+	{"youtube", "post the last render to YouTube (private)", func(e *editor) bool { e.wantYoutube = true; return false }},
 	{"help", "the key reference", func(e *editor) bool { e.helpOpen = true; return false }},
 	{"top", "jump to the first scene", func(e *editor) bool { e.cursor = 0; return false }},
 	{"bottom", "jump to the last scene", func(e *editor) bool {
@@ -1477,6 +1483,31 @@ func (e *editor) commitOvlSpec() {
 	e.dirty = true
 	e.forceScene = true
 	e.status = fmt.Sprintf("overlay %s riding the scene above (+%ss for %ss @ %s) · w to save", it.File, trimf(at), trimf(dur), place)
+}
+
+// youtubeOp posts the last render to YouTube by re-invoking movielily's own
+// `youtube` subcommand (the TUI can't import the cli package). It runs with
+// the terminal handed over, so the uploader's OAuth prompt and progress show.
+func (e *editor) youtubeOp(st *xterm.State) {
+	exe, err := os.Executable()
+	if err != nil {
+		exe = "movielily"
+	}
+	e.suspend(st)
+	fmt.Println("posting the last render to YouTube…")
+	cmd := exec.Command(exe, "youtube")
+	cmd.Dir = e.p.Root
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	runErr := cmd.Run()
+	e.resume(st)
+	if runErr != nil {
+		e.status = "youtube: " + runErr.Error()
+	} else {
+		e.status = "posted the last render to YouTube (private)"
+	}
+	e.redraw(true)
+	e.onSceneChange()
+	e.out.Flush()
 }
 
 // ---- watch the cut (r / R) -------------------------------------------------

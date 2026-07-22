@@ -14,7 +14,7 @@ import (
 	"movielily/internal/manim"
 	"movielily/internal/model"
 	"movielily/internal/project"
-	"movielily/internal/store"
+	"movielily/internal/timeline"
 	"movielily/internal/typst"
 )
 
@@ -32,55 +32,26 @@ import (
 // The invariant: source footage + instructions = export. Footage is only ever
 // read, so Export refuses to write its output over any source file.
 func Export(p *project.Project, items []model.SequenceItem, out string, draft bool) error {
-	// use|sequence records splice other sequences in before anything else.
-	items, err := store.Expand(p.SequencesDir(), items)
+	// Resolve the sequence (use-splices, overlay windows, offsets) once; the
+	// timeline package owns those semantics so export and review can't drift.
+	plan, warnings, err := timeline.Resolve(p.SequencesDir(), items)
 	if err != nil {
 		return err
 	}
-	// Section headers are organisational only, audio beds run under the
-	// timeline, and overlays ride on top of it; none of them may enter the
-	// index-coupled concat graph below. Beds are mixed and overlays composited
-	// after the concat. An overlay binds to the playable item directly above
-	// it, so its on-screen window is resolved here while walking in order.
-	type boundOverlay struct {
-		it         model.SequenceItem
-		start, end float64 // absolute timeline window
+	for _, w := range warnings {
+		fmt.Fprintln(os.Stderr, "warning: "+w)
 	}
-	playable := items[:0:0]
-	var beds []model.SequenceItem
-	var overlays []boundOverlay
-	offset, lastStart, lastDur := 0.0, 0.0, 0.0
-	havePlayable := false
-	for _, it := range items {
-		switch {
-		case it.IsSection():
-		case it.IsAudio():
-			beds = append(beds, it)
-		case it.IsOverlay():
-			if !havePlayable {
-				return fmt.Errorf("overlay %q has no scene above it to ride on", it.File)
-			}
-			s := lastStart + it.In
-			e := s + it.Dur
-			if it.Dur <= 0 || e > lastStart+lastDur {
-				e = lastStart + lastDur // to the end of its scene
-			}
-			if s >= e {
-				fmt.Fprintf(os.Stderr, "warning: overlay %q starts after its scene ends, skipping\n", it.File)
-				continue
-			}
-			overlays = append(overlays, boundOverlay{it: it, start: s, end: e})
-		default:
-			lastStart, lastDur, havePlayable = offset, it.Duration(), true
-			offset += it.Duration()
-			playable = append(playable, it)
-		}
-	}
-	items = playable
-	total := offset // full runtime, for end fades and duck/bed windows
-	if len(items) == 0 {
+	beds := plan.Beds
+	overlays := plan.Overlays
+	total := plan.Total // full runtime, for end fades and duck/bed windows
+	if len(plan.Scenes) == 0 {
 		return fmt.Errorf("nothing to export: sequence is empty")
 	}
+	sceneItems := make([]model.SequenceItem, len(plan.Scenes))
+	for i, s := range plan.Scenes {
+		sceneItems[i] = s.Item
+	}
+	items = sceneItems
 	w, h, fps, crf := p.Config.Width, p.Config.Height, p.Config.FPS, p.Config.CRF
 	if draft {
 		w, h, crf = (w/2)&^1, (h/2)&^1, 28
@@ -202,7 +173,7 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 	if len(overlays) > 0 {
 		cur := "[outv]"
 		for i, ov := range overlays {
-			abs, err := ResolveOverlay(p, ov.it)
+			abs, err := ResolveOverlay(p, ov.Item)
 			if err != nil {
 				return err
 			}
@@ -210,15 +181,15 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 			// can keep ffmpeg from ever finishing the encode. The looped image
 			// only needs to exist until its window closes; overlay's default
 			// repeatlast covers the rest of the film.
-			args = append(args, "-loop", "1", "-t", model.FormatSeconds(ov.end), "-i", abs)
-			corner, pct, err := model.ParsePlace(ov.it.Place)
+			args = append(args, "-loop", "1", "-t", model.FormatSeconds(ov.End), "-i", abs)
+			corner, pct, err := model.ParsePlace(ov.Item.Place)
 			if err != nil {
 				return err
 			}
 			scale, pos := overlayScalePos(corner, pct, w, h)
 			fmt.Fprintf(&fc, ";[%d:v]%s[o%d];%s[o%d]overlay=%s:enable='between(t,%s,%s)'[vo%d]",
 				input, scale, i, cur, i, pos,
-				model.FormatSeconds(ov.start), model.FormatSeconds(ov.end), i)
+				model.FormatSeconds(ov.Start), model.FormatSeconds(ov.End), i)
 			input++
 			cur = fmt.Sprintf("[vo%d]", i)
 		}
