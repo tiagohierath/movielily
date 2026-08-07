@@ -172,7 +172,7 @@ func (e *editor) startBed() {
 	e.mode = modeEdit
 	e.editWhat = editBedFile
 	e.inputBytes = nil
-	e.status = "music/narration file from footage/ (e.g. musica.mp3)"
+	e.status = "music/narration file from audio/ or another source media folder"
 }
 
 func (e *editor) commitBedFile() {
@@ -220,12 +220,12 @@ func (e *editor) startOverlay() {
 	e.mode = modeEdit
 	e.editWhat = editOvlFile
 	e.inputBytes = nil
-	e.status = "overlay image from footage/ (png keeps transparency)"
+	e.status = "overlay image from fxs/, images/, storyboards/ or refs/ (png keeps transparency)"
 }
 
 func (e *editor) commitOvlFile() {
 	name := strings.TrimSpace(string(e.inputBytes))
-	// Image from footage/, or a typst template (its text = the note: e edits).
+	// Image from source media, or a typst template (its text = the note: e edits).
 	if strings.HasSuffix(name, ".typ") {
 		if _, err := typst.Resolve(e.p, name); err != nil {
 			e.status = err.Error()

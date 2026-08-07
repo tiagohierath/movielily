@@ -187,7 +187,8 @@ func TagNumber(note, name string) (float64, bool) {
 // recording, music). Such files can sit in the timeline as `video|` items: the
 // sound occupies the slot and the picture is a black canvas to decorate with
 // overlays and cards. That's the narration-first workflow: record the voice
-// anywhere, drop it in footage/, select on it, build the film on top.
+// anywhere, put it in audio/dialogue/ or another source media folder, select on
+// it, build the film on top.
 func IsAudioFile(name string) bool {
 	switch strings.ToLower(filepath.Ext(name)) {
 	case ".wav", ".mp3", ".m4a", ".flac", ".ogg", ".aac", ".opus":

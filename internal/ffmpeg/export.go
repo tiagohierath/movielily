@@ -30,7 +30,7 @@ import (
 //
 // draft renders at half resolution with fast settings, for a quick full look.
 //
-// The invariant: source footage + instructions = export. Footage is only ever
+// The invariant: source media + instructions = export. Media is only ever
 // read, so Export refuses to write its output over any source file.
 func Export(p *project.Project, items []model.SequenceItem, out string, draft bool) error {
 	// Resolve the sequence (use-splices, overlay windows, offsets) once; the
@@ -62,9 +62,17 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 	if err != nil {
 		return err
 	}
-	if footAbs, err := filepath.Abs(p.Footage()); err == nil {
-		if rel, err := filepath.Rel(footAbs, outAbs); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return fmt.Errorf("refusing to export into footage/ — movielily never modifies source footage")
+	for _, dir := range p.MediaDirs() {
+		dirAbs, err := filepath.Abs(dir)
+		if err != nil {
+			return err
+		}
+		if rel, err := filepath.Rel(dirAbs, outAbs); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			name, ok := p.RelPath(dirAbs)
+			if !ok {
+				name = filepath.Base(dirAbs)
+			}
+			return fmt.Errorf("refusing to export into %s/ — movielily never modifies source media", name)
 		}
 	}
 
@@ -90,7 +98,7 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 			return err
 		}
 		if abs == outAbs {
-			return fmt.Errorf("refusing to overwrite source footage %q with the export", it.File)
+			return fmt.Errorf("refusing to overwrite source media %q with the export", it.File)
 		}
 		// Colour grade / film grain for this item, from its note (inline
 		// params + optional #grade:preset). Pure text, applied only here.
@@ -225,7 +233,7 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 				return err
 			}
 			if abs == outAbs {
-				return fmt.Errorf("refusing to overwrite source footage %q with the export", bed.File)
+				return fmt.Errorf("refusing to overwrite source media %q with the export", bed.File)
 			}
 			args = append(args, "-i", abs)
 			lab := fmt.Sprintf("[bed%d]", i)
@@ -288,10 +296,16 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 	return cmd.Run()
 }
 
-// geometryChain fits the item into the 4:3 frame, squares pixels and fixes
+// geometryChain fits the item into the project frame, squares pixels and fixes
 // fps (no trailing format). The default letterboxes; a #cover tag fills the
-// frame instead, cropping the edges that don't fit.
+// frame instead, cropping the edges that don't fit. Panned stills also fill the
+// frame because motion needs overscan outside the final crop.
 func geometryChain(it model.SequenceItem, w, h, fps int) string {
+	if it.Kind == model.KindImage {
+		if pan, ok := model.ImagePan(it.Note); ok && it.Duration() > 0 {
+			return panGeometryChain(pan, it.Duration(), w, h, fps)
+		}
+	}
 	if model.HasTag(it.Note, "cover") {
 		return fmt.Sprintf(
 			"scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,setsar=1,fps=%d",
@@ -300,6 +314,33 @@ func geometryChain(it model.SequenceItem, w, h, fps int) string {
 	return fmt.Sprintf(
 		"scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=%d",
 		w, h, w, h, fps)
+}
+
+func panGeometryChain(pan model.PanSpec, dur float64, w, h, fps int) string {
+	progress := "t/" + model.FormatSeconds(dur)
+	switch pan.Ease {
+	case model.PanEaseIn:
+		progress = "(t/" + model.FormatSeconds(dur) + ")*(t/" + model.FormatSeconds(dur) + ")"
+	case model.PanEaseOut:
+		progress = "1-(1-t/" + model.FormatSeconds(dur) + ")*(1-t/" + model.FormatSeconds(dur) + ")"
+	case model.PanEaseInOut:
+		progress = "0.5-0.5*cos(PI*t/" + model.FormatSeconds(dur) + ")"
+	}
+	x := "(iw-ow)/2"
+	y := "(ih-oh)/2"
+	switch pan.Direction {
+	case model.PanLeftRight:
+		x = "(iw-ow)*(" + progress + ")"
+	case model.PanRightLeft:
+		x = "(iw-ow)*(1-(" + progress + "))"
+	case model.PanTopBottom:
+		y = "(ih-oh)*(" + progress + ")"
+	case model.PanBottomTop:
+		y = "(ih-oh)*(1-(" + progress + "))"
+	}
+	return fmt.Sprintf(
+		"scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d:%s:%s,setsar=1,fps=%d",
+		w, h, w, h, x, y, fps)
 }
 
 // videoSegment builds the whole "[inPad] … [outPad]" video graph for one
@@ -328,7 +369,7 @@ func videoSegment(inPad, outPad string, it model.SequenceItem, w, h, fps int, gr
 }
 
 // ResolveOverlay turns an overlay's file into a real image: a plain image
-// from footage/, or a typst template (titles/*.typ) rendered with the
+// from source media, or a typst template (titles/*.typ) rendered with the
 // overlay's note (tags stripped) as its text, giving reusable lower-thirds,
 // citations and credits that ride a scene. Shared with the review simulation.
 func ResolveOverlay(p *project.Project, it model.SequenceItem) (string, error) {
@@ -406,7 +447,7 @@ func achainClip(it model.SequenceItem) string {
 	dur := it.Duration()
 	chain := achain()
 	if model.HasTag(it.Note, "clean") {
-		chain += ",highpass=f=80,afftdn=nr=12:nf=-25"
+		chain += ",highpass=f=80,afftdn=nr=12:nf=-40"
 	}
 	if gainDB, ok := model.GainTag(it.Note); ok && gainDB != 0 {
 		chain += fmt.Sprintf(",volume=%sdB", model.FormatSeconds(gainDB))

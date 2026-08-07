@@ -41,7 +41,11 @@ func newSelectAddCmd() *cobra.Command {
 			if out <= in {
 				return fmt.Errorf("out (%s) must be greater than in (%s)", args[2], args[1])
 			}
-			s := model.Select{File: p.StoreName(args[0]), In: in, Out: out, Note: joinArgs(args[3:])}
+			file, err := storeExistingMedia(p, args[0])
+			if err != nil {
+				return err
+			}
+			s := model.Select{File: file, In: in, Out: out, Note: joinArgs(args[3:])}
 			if err := store.Append(p.Selects(), s.String()); err != nil {
 				return err
 			}

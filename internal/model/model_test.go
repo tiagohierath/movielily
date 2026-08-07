@@ -95,3 +95,50 @@ func TestTags(t *testing.T) {
 		t.Errorf("Tags = %v, want %v", got, want)
 	}
 }
+
+func TestImagePan(t *testing.T) {
+	spec, ok := ImagePan("wide board #pan_rl #ease_inout")
+	if !ok {
+		t.Fatal("ImagePan did not find #pan_rl")
+	}
+	if spec.Direction != PanRightLeft || spec.Ease != PanEaseInOut {
+		t.Fatalf("ImagePan = %+v, want right-left ease-in/out", spec)
+	}
+	if spec.Label() != "pan R->L ease in/out" {
+		t.Fatalf("Label = %q", spec.Label())
+	}
+
+	spec, ok = ImagePan("wide board #pan_lr #ease_out")
+	if !ok {
+		t.Fatal("ImagePan did not find #pan_lr")
+	}
+	if spec.Direction != PanLeftRight || spec.Ease != PanEaseOut {
+		t.Fatalf("ImagePan = %+v, want left-right ease-out", spec)
+	}
+	if spec.Label() != "pan L->R ease out" {
+		t.Fatalf("Label = %q", spec.Label())
+	}
+
+	spec, ok = ImagePan("tall board #pan_tb")
+	if !ok {
+		t.Fatal("ImagePan did not find #pan_tb")
+	}
+	if spec.Direction != PanTopBottom || spec.Ease != PanEaseLinear {
+		t.Fatalf("ImagePan default = %+v, want top-bottom linear", spec)
+	}
+
+	if _, ok := ImagePan("still board #ease_inout"); ok {
+		t.Fatal("ImagePan found a pan without a pan direction tag")
+	}
+}
+
+func TestSetImagePan(t *testing.T) {
+	got := SetImagePan("wide shot #pan_lr #ease_linear #keep", PanSpec{Direction: PanBottomTop, Ease: PanEaseIn})
+	want := "wide shot #keep #pan_bt #ease_in"
+	if got != want {
+		t.Fatalf("SetImagePan = %q, want %q", got, want)
+	}
+	if got := SetImagePan("wide shot #pan_rl #ease_out #keep", PanSpec{}); got != "wide shot #keep" {
+		t.Fatalf("SetImagePan clear = %q", got)
+	}
+}

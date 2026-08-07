@@ -241,6 +241,84 @@ func (e *editor) nudgeIn(dir float64) {
 	e.status = fmt.Sprintf("in %s (%ss) · w to save", mmss(it.In), trimf(it.Duration()))
 }
 
+func (e *editor) cycleImagePan() {
+	if len(e.items) == 0 {
+		return
+	}
+	it := &e.items[e.cursor]
+	if it.Kind != model.KindImage {
+		e.status = "pan is for image shots"
+		return
+	}
+	current, ok := model.ImagePan(it.Note)
+	ease := model.PanEaseLinear
+	if ok {
+		ease = current.Ease
+	}
+	dirs := []model.PanDirection{
+		model.PanLeftRight,
+		model.PanRightLeft,
+		model.PanTopBottom,
+		model.PanBottomTop,
+		"",
+	}
+	next := dirs[0]
+	if ok {
+		for i, dir := range dirs {
+			if current.Direction == dir {
+				next = dirs[(i+1)%len(dirs)]
+				break
+			}
+		}
+	}
+	e.pushUndo()
+	if next == "" {
+		it.Note = model.SetImagePan(it.Note, model.PanSpec{})
+		e.status = "pan off · w to save"
+	} else {
+		spec := model.PanSpec{Direction: next, Ease: ease}
+		it.Note = model.SetImagePan(it.Note, spec)
+		e.status = spec.Label() + " · w to save"
+	}
+	e.dirty = true
+	e.forceScene = true
+}
+
+func (e *editor) togglePanEase() {
+	if len(e.items) == 0 {
+		return
+	}
+	it := &e.items[e.cursor]
+	if it.Kind != model.KindImage {
+		e.status = "pan easing is for image shots"
+		return
+	}
+	spec, ok := model.ImagePan(it.Note)
+	if !ok {
+		e.status = "set a pan first with m"
+		return
+	}
+	e.pushUndo()
+	modes := []model.PanEase{
+		model.PanEaseLinear,
+		model.PanEaseIn,
+		model.PanEaseOut,
+		model.PanEaseInOut,
+	}
+	next := modes[0]
+	for i, mode := range modes {
+		if spec.Ease == mode {
+			next = modes[(i+1)%len(modes)]
+			break
+		}
+	}
+	spec.Ease = next
+	it.Note = model.SetImagePan(it.Note, spec)
+	e.status = spec.Label() + " · w to save"
+	e.dirty = true
+	e.forceScene = true
+}
+
 // startSplit cuts the clip under the cursor in two at a point picked in mpv
 // (detached, like everything else): seek, Enter, done.
 func (e *editor) startSplit() {

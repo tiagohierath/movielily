@@ -49,6 +49,7 @@ func parseClock(s string) (float64, error) {
 }
 
 var tagRe = regexp.MustCompile(`#[\p{L}\p{N}_\-+.]+`)
+var imagePanTagRe = regexp.MustCompile(`(?i)#(?:pan_(?:lr|rl|tb|bt)|ease_(?:linear|in|out|inout))\b`)
 
 // Tags extracts #hashtags from free text, lower-cased and de-duplicated,
 // preserving first-seen order. Tags are how footage is labelled (#best #funny).
@@ -63,6 +64,118 @@ func Tags(text string) []string {
 		}
 	}
 	return out
+}
+
+type PanDirection string
+
+const (
+	PanLeftRight PanDirection = "lr"
+	PanRightLeft PanDirection = "rl"
+	PanTopBottom PanDirection = "tb"
+	PanBottomTop PanDirection = "bt"
+)
+
+type PanEase string
+
+const (
+	PanEaseLinear PanEase = "linear"
+	PanEaseIn     PanEase = "in"
+	PanEaseOut    PanEase = "out"
+	PanEaseInOut  PanEase = "inout"
+)
+
+type PanSpec struct {
+	Direction PanDirection
+	Ease      PanEase
+}
+
+// ImagePan reads simple orthogonal pan motion from note tags. The pan tags are
+// deliberately plain text so browser edits, TUI edits and git diffs all share
+// the same representation:
+//
+//	#pan_lr #pan_rl #pan_tb #pan_bt
+//	#ease_linear #ease_in #ease_out #ease_inout
+func ImagePan(note string) (PanSpec, bool) {
+	spec := PanSpec{Ease: PanEaseLinear}
+	for _, t := range Tags(note) {
+		switch t {
+		case "#pan_lr":
+			spec.Direction = PanLeftRight
+		case "#pan_rl":
+			spec.Direction = PanRightLeft
+		case "#pan_tb":
+			spec.Direction = PanTopBottom
+		case "#pan_bt":
+			spec.Direction = PanBottomTop
+		case "#ease_linear":
+			spec.Ease = PanEaseLinear
+		case "#ease_in":
+			spec.Ease = PanEaseIn
+		case "#ease_out":
+			spec.Ease = PanEaseOut
+		case "#ease_inout":
+			spec.Ease = PanEaseInOut
+		}
+	}
+	if spec.Direction == "" {
+		return PanSpec{}, false
+	}
+	return spec, true
+}
+
+func StripImagePan(note string) string {
+	return strings.Join(strings.Fields(imagePanTagRe.ReplaceAllString(note, "")), " ")
+}
+
+func SetImagePan(note string, spec PanSpec) string {
+	base := StripImagePan(note)
+	if spec.Direction == "" {
+		return base
+	}
+	if spec.Ease == "" {
+		spec.Ease = PanEaseLinear
+	}
+	tags := "#pan_" + string(spec.Direction) + " #ease_" + string(spec.Ease)
+	if base == "" {
+		return tags
+	}
+	return base + " " + tags
+}
+
+func (p PanSpec) DirectionLabel() string {
+	switch p.Direction {
+	case PanLeftRight:
+		return "L->R"
+	case PanRightLeft:
+		return "R->L"
+	case PanTopBottom:
+		return "T->B"
+	case PanBottomTop:
+		return "B->T"
+	default:
+		return ""
+	}
+}
+
+func (p PanSpec) EaseLabel() string {
+	switch p.Ease {
+	case PanEaseIn:
+		return "ease in"
+	case PanEaseOut:
+		return "ease out"
+	case PanEaseInOut:
+		return "ease in/out"
+	default:
+		return "linear"
+	}
+}
+
+func (p PanSpec) Label() string {
+	dir := p.DirectionLabel()
+	if dir == "" {
+		return ""
+	}
+	return "pan " + dir + " " + p.EaseLabel()
 }
 
 // TagCount pairs a tag with how often it occurs.

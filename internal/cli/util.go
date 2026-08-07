@@ -61,20 +61,44 @@ func formatNote(n model.Note) string {
 
 func round1(f float64) float64 { return float64(int64(f*10+0.5)) / 10 }
 
-// refuseInsideFootage guards writes: nothing movielily produces may land in
-// footage/ (the read-only source area).
+func secondsToFrames(seconds float64, fps int) int {
+	if fps <= 0 {
+		fps = 30
+	}
+	if seconds <= 0 {
+		return 0
+	}
+	return int(seconds*float64(fps) + 0.5)
+}
+
+func storeExistingMedia(p *project.Project, name string) (string, error) {
+	abs, err := p.ResolveFootage(name)
+	if err != nil {
+		return "", err
+	}
+	return p.StoreName(abs), nil
+}
+
+// refuseInsideFootage guards writes: nothing movielily produces may land in a
+// source media folder.
 func refuseInsideFootage(p *project.Project, out string) error {
 	outAbs, err := filepath.Abs(out)
 	if err != nil {
 		return err
 	}
-	footAbs, err := filepath.Abs(p.Footage())
-	if err != nil {
-		return err
-	}
-	rel, err := filepath.Rel(footAbs, outAbs)
-	if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("refusing to write into footage/ (it is read-only source material)")
+	for _, dir := range p.MediaDirs() {
+		dirAbs, err := filepath.Abs(dir)
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(dirAbs, outAbs)
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			name, ok := p.RelPath(dirAbs)
+			if !ok {
+				name = filepath.Base(dirAbs)
+			}
+			return fmt.Errorf("refusing to write into %s/ (source media is read-only)", name)
+		}
 	}
 	return nil
 }

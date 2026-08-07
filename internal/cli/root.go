@@ -11,10 +11,10 @@ import (
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "movielily",
-		Short: "A minimal, notebook-style video editor (watch -> log -> select -> assemble -> export)",
-		Long: "movielily is a small command-line companion to mpv and ffmpeg for making\n" +
-			"short videos: watch footage, mark moments, keep selects, assemble sequences\n" +
-			"from plain-text files, review them instantly, and export with ffmpeg.",
+		Short: "A minimal short-film editor: browser boards, terminal timing, text EDLs",
+		Long: "movielily is a small short-film system around plain-text EDLs: sort\n" +
+			"storyboards in the browser, refine timing/audio in the terminal, review\n" +
+			"instantly, and export with ffmpeg.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -26,16 +26,19 @@ func newRootCmd() *cobra.Command {
 		newNoteCmd(),
 		newSearchCmd(),
 		newTagCmd(),
+		newBoardCmd(),
 		newSeqCmd(),
 		newEditCmd(),
 		newReviewCmd(),
 		newExportCmd(),
+		newStoryboardCmd(),
 		newSilencesCmd(),
 		newGradeCmd(),
 		newChaptersCmd(),
 		newFrameCmd(),
 		newYoutubeCmd(),
 		newSnapshotCmd(),
+		newDoctorCmd(),
 		newVersionCmd(),
 	)
 	return root

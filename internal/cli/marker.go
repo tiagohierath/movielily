@@ -34,7 +34,11 @@ func newMarkerAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			m := model.Marker{File: p.StoreName(args[0]), Time: t, Note: joinArgs(args[2:])}
+			file, err := storeExistingMedia(p, args[0])
+			if err != nil {
+				return err
+			}
+			m := model.Marker{File: file, Time: t, Note: joinArgs(args[2:])}
 			if err := store.Append(p.Markers(), m.String()); err != nil {
 				return err
 			}

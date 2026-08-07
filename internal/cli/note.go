@@ -33,7 +33,11 @@ func newNoteAddCmd() *cobra.Command {
 			}
 			n := model.Note{Text: joinArgs(args)}
 			if clip != "" {
-				n.File = p.StoreName(clip)
+				file, err := storeExistingMedia(p, clip)
+				if err != nil {
+					return err
+				}
+				n.File = file
 			}
 			if ts != "" {
 				t, err := model.ParseSeconds(ts)

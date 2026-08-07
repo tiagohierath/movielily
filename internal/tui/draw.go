@@ -169,7 +169,7 @@ func (e *editor) drawHeader() {
 	}
 	d := ""
 	if e.dirty {
-		d = " ●"
+		d = " · modified"
 	}
 	s := fmt.Sprintf(" movielily edit · %s · %d scene(s) · %s%s", e.name, e.sceneCount(), mmss(total), d)
 	io.WriteString(e.out, moveTo(1, 1)+"\x1b[7m"+padRight(trunc(s, e.w), e.w)+"\x1b[0m")
@@ -212,7 +212,7 @@ func (e *editor) drawFooter() {
 	case e.status != "":
 		s = " " + e.status
 	default:
-		s = " ? help · : commands · j/k · ⏎ in/out · r watch · T card · e note · t number · d/p cut/paste · w save · q quit"
+		s = " ? help · : commands · j/k · ⏎ in/out · r watch · c grade · m pan · e note · t number · w save"
 	}
 	io.WriteString(e.out, moveTo(e.h, 1)+"\x1b[7m"+padRight(trunc(s, e.w), e.w)+"\x1b[0m")
 }
@@ -227,7 +227,9 @@ func (e *editor) drawHelp() {
 		"  s        split the clip at a point picked in mpv      ",
 		"  < / >    nudge the clip's in point                    ",
 		"  g/G      top / bottom    t    duration (gain on beds) ",
-		"  [/]      prev/next sect  e    edit note or card text  ",
+		"  [/]      prev/next sect  c    colour-grade / grain    ",
+		"  m/M      image pan / pan easing                         ",
+		"  e        edit note or card text                       ",
 		"  space    mark            y    yank marked/current     ",
 		"  d        cut             p    paste below cursor      ",
 		"  /        search          n/N  next / prev match       ",
@@ -587,7 +589,13 @@ func (e *editor) drawCenter() {
 	dr := e.detailsRow
 	switch {
 	case it.Kind == model.KindImage, it.Kind == model.KindTitle, it.Kind == model.KindAnim:
-		e.put(dr, col, fmt.Sprintf("\x1b[2m%ss on screen · at %s\x1b[0m", trimf(it.Dur), mmss(at)))
+		extra := ""
+		if it.Kind == model.KindImage {
+			if pan, ok := model.ImagePan(it.Note); ok {
+				extra = " · " + pan.Label()
+			}
+		}
+		e.put(dr, col, fmt.Sprintf("\x1b[2m%ss on screen · at %s%s\x1b[0m", trimf(it.Dur), mmss(at), extra))
 	case it.Kind == model.KindOverlay:
 		e.put(dr, col, fmt.Sprintf("\x1b[2m+%ss for %ss @ %s\x1b[0m", trimf(it.In), trimf(it.Dur), it.Place))
 	case it.Kind == model.KindAudio:
@@ -614,7 +622,7 @@ func (e *editor) drawNotes() {
 	col := e.notesCol
 	e.put(e.listTop, col, "\x1b[1mnotes\x1b[0m")
 	human, _ := grade.SplitNote(it.Note)
-	human = strings.TrimSpace(human)
+	human = strings.TrimSpace(model.StripImagePan(human))
 	row := e.listTop + 2
 	if human == "" {
 		e.put(row, col, "\x1b[2m(no note — press e)\x1b[0m")

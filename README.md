@@ -1,14 +1,14 @@
 # movielily
 
-movielily is a notebook-style video editor for the terminal: watch footage,
-log the good moments, assemble a plain-text cut, watch it instantly without
+movielily is a notebook-style short-film editor: sort storyboard images in the
+browser, time and refine the cut in a terminal UI, watch it instantly without
 rendering, and export a YouTube-ready 4:3 file with ffmpeg.
 
-**The one rule:** your footage is never modified, moved, or renamed. mpv and
-ffmpeg only ever *read* it. Every decision — every cut, effect, colour grade
-and film-grain setting — is plain text; export always writes a brand-new
-file. So **everything is reversible** (delete the text), reproducible (same
-text, same pixels) and versionable.
+**The one rule:** your source media is never modified, moved, or renamed. mpv,
+ffmpeg and the browser board only ever *read* it. Every decision — every cut,
+duration, pan, effect, colour grade and note — is plain text; export always
+writes a brand-new file. So **everything is reversible** (delete the text),
+reproducible (same text, same pixels) and versionable.
 
 Times are always **seconds**: `90`, `90s`, and `1:30` all mean the same thing.
 
@@ -22,7 +22,7 @@ fetched ephemerally when missing.
 
 | command | what it does |
 |---|---|
-| `movielily init [dir] [--footage <src>]` | create a project (optionally copy media in) |
+| `movielily init [dir] [--git] [--footage <src>]` | create a GitHub-friendly short-film project |
 | `movielily watch <clip>` | play in mpv and log: `m` marker, `i`/`o` in/out, `Enter` select (works on audio files too) |
 | `movielily marker add <clip> <t> [note]` · `marker list` | markers by hand |
 | `movielily select add <clip> <in> <out> [note]` · `select list` | selects by hand |
@@ -31,7 +31,7 @@ fetched ephemerally when missing.
 | `movielily tag [name]` | list #tags, or everything tagged #name |
 | `movielily seq from-selects <seq> [--force]` | seed a sequence from all selects |
 | `movielily seq video <seq> <file> <in> <out> [note]` | append a clip (or a slice of a voice recording) |
-| `movielily seq image <seq> <img> <dur> [note]` | append a still (`#cover` in the note = fill the frame) |
+| `movielily seq image <seq> <img> <dur> [note]` | append a still (`#cover` fills; `#pan_rl` etc. pans) |
 | `movielily seq title <seq> <template> <dur> <text>` | append a typst title card |
 | `movielily seq anim <seq> <template> <text>` | append a manim animated card (renders now, measures length) |
 | `movielily seq overlay <seq> <img|tpl.typ> <at> <dur> [--place br:33] [note]` | image, or a typst template whose text is the note (lower-thirds), on top of the LAST scene |
@@ -40,14 +40,17 @@ fetched ephemerally when missing.
 | `movielily grade params/list/show/set` | manage colour-grade / film-grain presets (grades/*.grade) |
 | `movielily seq audio <seq> <file> [--gain -12] [note]` | music/narration bed under the whole cut |
 | `movielily seq show <seq>` · `seq list` | inspect sequences |
+| `movielily board <seq>` | browser light table for image storyboards: add local images, sort, time, pan, preview, save EDL |
 | `movielily edit [seq]` | the interactive editor (see keys below) |
 | `movielily review <seq> [--from N]` | watch the cut in mpv, simulated export, no render |
 | `movielily export <seq> <out.mp4> [--draft]` | render the real file (auto-snapshots; --draft = half-res quick look) |
+| `movielily storyboard <seq> <out.typ|out.pdf> [--aspect 4:3|16:9]` | printable Typst/PDF storyboard book |
 | `movielily chapters <seq>` | YouTube chapters from your sections, ready for the description |
 | `movielily frame <clip> <t> <out.png>` | full-resolution frame grab (thumbnails) |
 | `movielily youtube [video] [--title T]` | post the last render (or a given file) to YouTube, private, via your uploader script |
 | `movielily snapshot [message]` | commit the instructions to git (creates the repo on first use) |
 | `movielily snapshot list` · `snapshot restore <id>` | see versions · roll back (safely: it snapshots first) |
+| `movielily doctor [--fix]` | check/repair project folders, `.gitignore`, sequences and git readiness |
 | `movielily version` | version info |
 
 Aliases: `m`=marker, `sel`=select, `n`=note, `s`=seq, `snap`=snapshot.
@@ -57,23 +60,30 @@ Aliases: `m`=marker, `sel`=select, `n`=note, `s`=seq, `snap`=snapshot.
 ## The sequence file
 
 A sequence is the movie: an ordered list of records, one per line, in
-`sequences/<name>.txt`. Edit it in the TUI or in vim, both stay in sync.
+`sequences/<name>.txt`. Edit it in the browser board, the TUI, or in vim; all
+views stay in sync.
 
 ```
 section|Abertura                                  organisational folder, no runtime
 title|chapter.typ|4|Capítulo 1                    typst card, 4s on screen
-video|clip001.mp4|72.3|85.1|the punchline #best   clip trimmed to in..out
-overlay|ref.png|2|5|tr:30|the reference           rides the scene ABOVE it
-video|voz.wav|0|35|narração                       voice slice: black canvas + sound
-image|photo.jpg|5|opening #cover                  still; #cover crops to fill
+video|footage/raw/clip001.mp4|72.3|85.1|the punchline #best
+overlay|fxs/overlays/ref.png|2|5|tr:30|the reference
+video|audio/dialogue/voz.wav|0|35|narração         voice slice: black canvas + sound
+image|storyboards/inbox/photo.jpg|5|opening #cover still; #cover crops to fill
+image|images/stills/wide.jpg|2|push past tower #pan_rl #ease_out
 anim|card.py|3.8|Fim                              manim card (length measured)
-audio|song.mp3|-12|music bed                      under the whole cut, cut at the end
+audio|audio/music/song.mp3|-12|music bed           under the whole cut, cut at the end
 ```
 
 Notes carry `#tags` anywhere; `search` and `tag` find them and the TUI
-colours them. Three tags are also switches:
+colours them. Some tags are also switches:
 
 - `#cover` on a visual item: fill the frame (crop) instead of letterboxing;
+- `#pan_lr` `#pan_rl` `#pan_tb` `#pan_bt` on an image: pan left/right or
+  top/bottom over the shot's duration; use wider/taller images for visible
+  movement;
+- `#ease_linear` / `#ease_in` / `#ease_out` / `#ease_inout` on a panned image:
+  choose the timing curve;
 - `#mute` on a clip: silence its own sound (b-roll riding over narration);
 - `#-6db` / `#+3db` on a clip: adjust just that clip's level;
 - `#clean` on a clip/voice slice: highpass + gentle denoise for rough recordings;
@@ -87,17 +97,83 @@ with silence automatically instead of failing.
 
 ## Workflows
 
+### Project layout
+
+```bash
+movielily init my-film --git
+cd my-film
+movielily board main --open
+```
+
+`init` creates a folder meant to stay readable in any file manager:
+
+```text
+scripts/                  script drafts, dialogue, shot notes
+storyboards/inbox/        boards imported from the browser light table
+storyboards/scenes/       optional manual scene folders
+images/stills/            finished stills and cleaned board images
+images/backgrounds/       plates and backgrounds
+refs/visual/              reference images and mood material
+refs/research/            research material
+audio/dialogue/           voice, narration and dialogue takes
+audio/music/              music beds
+audio/sfx/                sound effects
+audio/ambience/           room tone and atmosphere
+fxs/overlays/             transparent PNGs and compositing elements
+fxs/mattes/               mattes and masks
+fxs/textures/             grain, paper, dust, light leaks
+footage/raw/              raw clips and legacy catch-all media
+sequences/                the plain-text cuts
+exports/video/            rendered movies
+exports/storyboard-books/ printable Typst/PDF storyboard books
+```
+
+Every important folder has a small `README.txt`. New projects also get a
+GitHub-friendly `README.md`, `.gitignore`, and `sequences/main.txt`; the ignore
+rules keep source media and generated exports out of git while keeping the
+text instructions trackable. For older projects, run:
+
+```bash
+movielily doctor --fix
+```
+
+### Browser board
+
+```bash
+movielily board main --open
+```
+
+The browser board is a light table: unused images on the left, the ordered EDL
+in the middle, and a fixed preview on the right. Add images from your computer,
+drag them into order, set duration with preset buttons or the text box, choose
+simple vertical/horizontal pan, press play, then save. It writes the same
+`sequences/main.txt` file the TUI reads.
+
+Uploads from the browser land in `storyboards/inbox/`. The board scans
+`storyboards/`, `images/`, `refs/`, `fxs/` and legacy `footage/` recursively.
+
+### Printable storyboard book
+
+```bash
+movielily storyboard main exports/storyboard-books/main.pdf --aspect 4:3
+movielily storyboard main exports/storyboard-books/main-16x9.pdf --aspect 16:9
+```
+
+This exports a Typst/PDF book: a contact-sheet grid with each doodle on one
+side and notes, numbers, durations, tags and file names on the other. It is for
+printing the movie as a book, not rendering video.
+
 ### Voice-first (narrated videos)
 
 Record your narration anywhere, pauses and retakes included, then:
 
 ```bash
-cp ~/gravacao.wav footage/
-movielily silences gravacao.wav --keep   # the spoken stretches become selects
+cp ~/gravacao.wav audio/dialogue/
+movielily silences audio/dialogue/gravacao.wav --keep
 movielily seq from-selects aula
 movielily edit aula                 # prune misfires (d), split (s), cards (T)
-movielily seq audio aula musica.mp3 --gain -14 "trilha #duck"
-movielily export aula aula.mp4
+movielily seq audio aula audio/music/trilha.mp3 --gain -14 "trilha #duck"
+movielily export aula exports/video/aula.mp4
 ```
 
 (`movielily watch gravacao.wav` is the manual alternative: listen and mark
@@ -138,7 +214,6 @@ waveform, in kitty/Ghostty/WezTerm) with its timing and grade summary beneath.
 | `s` | split the clip in two at a point picked in mpv |
 | `<`/`>` | nudge the clip's in point ±0.5s (`+`/`-` does the out point) |
 | `c` | colour-grade panel: live sliders for the scene's grade (see below) |
-| `Tab` | snapshot browser: pick a version, `⏎` restores it |
 | `Enter` | open the thing under the cursor in an mpv window, editor stays live: clips replay for redoing in/out (applies when you confirm), images/overlays/cards/animations/beds just open |
 | `r` / `R` | watch from here / the whole cut (simulated export in an mpv window, nothing renders) |
 | `T` / `A` | insert a title card / animated card below the cursor: pick template (last one prefilled), type text |
@@ -207,7 +282,7 @@ TUI panel: press `c` on a scene for live sliders (`j`/`k` pick, `←`/`→`
 adjust, `0` reset one, `r` clear). The panel writes the same tokens back into
 the note, so text and TUI are one thing. Parameters: brightness, contrast,
 saturation, gamma, warmth, sharpen, grain (luma-only film grain). Applied only
-at export, never to footage — fully reversible. Full guide:
+at export, never to source media — fully reversible. Full guide:
 [docs/color-grading.md](docs/color-grading.md).
 
 ## Nested sequences
@@ -249,14 +324,15 @@ the export's finishing pass, fades/ducking/loudnorm, is not simulated.)
 ## export: the real render
 
 ```bash
-movielily export filme filme.mp4
-movielily export filme rascunho.mp4 --draft   # half-res, fast: a quick look
+movielily export filme exports/video/filme.mp4
+movielily export filme exports/video/rascunho.mp4 --draft
 ```
 
 One H.264 file, tuned to YouTube's upload recommendations: High profile
 4.2, constant frame rate, keyframe every 2s, 2 B-frames, BT.709 flagged,
 yuv420p, AAC-LC 48kHz, `+faststart`. Resolution, fps and CRF come from
-`movielily.conf`. Export refuses to write into `footage/` or over any source.
+`movielily.conf`. Export refuses to write into source media folders or over
+any source.
 In a snapshotted project, every real export automatically commits a snapshot
 named after the output file, so any published video maps to its exact cut.
 
@@ -289,8 +365,8 @@ movielily snapshot restore d77b1c6    # safe: snapshots the current state first
 ```
 
 Optional. The first `snapshot` turns the project into a git repo whose
-`.gitignore` keeps footage, exports and caches out, so only the small text
-files are versioned. It is a completely normal repo:
+`.gitignore` keeps source media folders, exports and caches out, so only the
+small text files are versioned. It is a completely normal repo:
 
 ```bash
 git checkout -b versao-curta      # branch a different cut of the same movie
@@ -299,9 +375,10 @@ git checkout main && git merge versao-curta   # line-per-record merges cleanly
 git remote add origin … && git push           # collaborate
 ```
 
-A team shares the repo (instructions) and ships `footage/` out of band
-(drive, rsync); since records are one per line, two people editing different
-scenes merge without conflict. The TUI's `Tab` shows the branch graph.
+A team shares the repo (instructions) and ships `storyboards/`, `audio/`,
+`footage/` and other media folders out of band (drive, rsync); since records
+are one per line, two people editing different scenes merge without conflict.
+The TUI's `Tab` shows the branch graph.
 
 ## Configuration
 
@@ -319,18 +396,30 @@ crf = 18          # libx264 quality, lower is better
 
 ```
 movielily.conf      config (above)
-footage/            your media, read-only: mp4 · jpg/png · wav/mp3/m4a/flac/ogg
-titles/             typst card templates (.typ)
-anims/              manim card templates (.py)
+README.md           GitHub-facing project map
+README.txt          file-manager project map
+scripts/            writing, dialogue drafts, shot notes
+storyboards/        boards and animatic stills, scanned recursively
+images/             cleaned stills, plates and backgrounds
+refs/               visual reference and research
+audio/              dialogue, narration, music, sfx, ambience
+fxs/                overlays, mattes and texture plates
+footage/            raw clips and legacy catch-all media
+titles/             typst card templates (.typ), versionable
+anims/              manim card templates (.py), versionable
+grades/             colour-grade presets, versionable
 markers.txt         file|seconds|note
 selects.txt         file|in|out|note
 notes.txt           file|time|text
 sequences/*.txt     the cuts (records above)
-.cache/             rendered cards, regenerable, gitignored
+exports/            rendered movies, storyboard books and frames
+.cache/             rendered cards/review files, regenerable, gitignored
 ```
 
 Everything is plain text with `#` comments and blank lines ignored, so `cat`,
-`grep`, `sed`, vim and git all work directly on it.
+`grep`, `sed`, vim and git all work directly on it. The source media folders
+are intentionally ignored by `movielily snapshot`; the sequence text stores
+readable paths back to them.
 
 ## Ideas parked for later
 

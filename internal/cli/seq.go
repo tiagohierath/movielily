@@ -48,7 +48,7 @@ func newSeqListCmd() *cobra.Command {
 			found := false
 			for _, e := range entries {
 				name := e.Name()
-				if e.IsDir() || strings.HasPrefix(name, ".") || !strings.HasSuffix(name, ".txt") {
+				if e.IsDir() || !project.IsSequenceFileName(name) {
 					continue
 				}
 				items, err := store.LoadSequence(filepath.Join(p.SequencesDir(), name))
@@ -137,7 +137,11 @@ func newSeqVideoCmd() *cobra.Command {
 			if out <= in {
 				return fmt.Errorf("out (%s) must be greater than in (%s)", args[3], args[2])
 			}
-			it := model.SequenceItem{Kind: model.KindVideo, File: p.StoreName(args[1]), In: in, Out: out, Note: joinArgs(args[4:])}
+			file, err := storeExistingMedia(p, args[1])
+			if err != nil {
+				return err
+			}
+			it := model.SequenceItem{Kind: model.KindVideo, File: file, In: in, Out: out, Note: joinArgs(args[4:])}
 			if err := store.Append(p.Sequence(args[0]), it.String()); err != nil {
 				return err
 			}
@@ -164,7 +168,11 @@ func newSeqImageCmd() *cobra.Command {
 			if dur <= 0 {
 				return fmt.Errorf("duration must be positive")
 			}
-			it := model.SequenceItem{Kind: model.KindImage, File: p.StoreName(args[1]), Dur: dur, Note: joinArgs(args[3:])}
+			file, err := storeExistingMedia(p, args[1])
+			if err != nil {
+				return err
+			}
+			it := model.SequenceItem{Kind: model.KindImage, File: file, Dur: dur, Note: joinArgs(args[3:])}
 			if err := store.Append(p.Sequence(args[0]), it.String()); err != nil {
 				return err
 			}
@@ -189,10 +197,11 @@ func newSeqAudioCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := p.ResolveFootage(args[1]); err != nil {
+			file, err := storeExistingMedia(p, args[1])
+			if err != nil {
 				return err
 			}
-			it := model.SequenceItem{Kind: model.KindAudio, File: p.StoreName(args[1]), Gain: gain, Note: joinArgs(args[2:])}
+			it := model.SequenceItem{Kind: model.KindAudio, File: file, Gain: gain, Note: joinArgs(args[2:])}
 			if err := store.Append(p.Sequence(args[0]), it.String()); err != nil {
 				return err
 			}
@@ -309,7 +318,7 @@ func newSeqOverlayCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// An overlay is an image from footage/ OR a typst template from
+			// An overlay is an image from source media OR a typst template from
 			// titles/ (its text = the note): reusable lower-thirds/captions.
 			if strings.HasSuffix(args[1], ".typ") {
 				if _, err := typst.Resolve(p, args[1]); err != nil {
@@ -332,6 +341,11 @@ func newSeqOverlayCmd() *cobra.Command {
 			file := p.StoreName(args[1])
 			if strings.HasSuffix(args[1], ".typ") {
 				file = typst.StoreName(args[1])
+			} else {
+				file, err = storeExistingMedia(p, args[1])
+				if err != nil {
+					return err
+				}
 			}
 			it := model.SequenceItem{Kind: model.KindOverlay, File: file,
 				In: at, Dur: dur, Place: place, Note: joinArgs(args[4:])}

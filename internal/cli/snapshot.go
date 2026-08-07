@@ -14,10 +14,10 @@ import (
 )
 
 // Snapshots are optional git integration: the project's plain-text
-// instructions (config, markers, selects, notes, sequences) are committed to
-// a git repo at the project root, so every cut of the movie can be revisited.
-// Footage never enters git: it's read-only source material, huge, and already
-// safe on disk; .gitignore keeps it (and exported files) out.
+// instructions (config, markers, selects, notes, sequences) are committed to a
+// git repo at the project root, so every cut of the movie can be revisited.
+// Source media never enters git: it's read-only, huge, and already safe on
+// disk; .gitignore keeps it and exports out.
 
 func newSnapshotCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -26,8 +26,9 @@ func newSnapshotCmd() *cobra.Command {
 		Short:   "Version the project's instructions with git (optional)",
 		Long: "snapshot commits the project's plain-text instructions (config, markers,\n" +
 			"selects, notes, sequences) to a git repository at the project root, creating\n" +
-			"it on first use. Footage and exports are ignored, only the small text files\n" +
-			"are versioned. Entirely optional: nothing else in movielily needs git.",
+			"it on first use. Media folders and exports are ignored; only the small\n" +
+			"text instruction files are versioned. Entirely optional: nothing else in\n" +
+			"movielily needs git.",
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return takeSnapshot(joinArgs(args))
@@ -67,7 +68,7 @@ func newSnapshotRestoreCmd() *cobra.Command {
 		Short: "Restore the instructions from a snapshot (by its short id)",
 		Long: "restore brings every versioned file back to how it was in the given\n" +
 			"snapshot. The current state is snapshotted first, so a restore can always\n" +
-			"be undone by restoring the snapshot it just took. Footage is untouched.",
+			"be undone by restoring the snapshot it just took. Source media is untouched.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p, err := project.Open()
@@ -105,11 +106,20 @@ func takeSnapshot(message string) error {
 	if err != nil {
 		return err
 	}
+	return takeSnapshotProject(p, message)
+}
+
+func takeSnapshotProject(p *project.Project, message string) error {
+	if err := p.EnsureStructure(); err != nil {
+		return err
+	}
 	if !hasSnapshotRepo(p.Root) {
 		if err := initSnapshotRepo(p.Root); err != nil {
 			return err
 		}
-		fmt.Println("initialized snapshot repository (footage/ and exports stay out of git)")
+		fmt.Println("initialized snapshot repository (media folders and exports stay out of git)")
+	} else if err := project.EnsureGitignore(p.Root); err != nil {
+		return err
 	}
 	if _, err := git(p.Root, "add", "-A"); err != nil {
 		return err
@@ -138,20 +148,18 @@ func initSnapshotRepo(root string) error {
 	if _, err := exec.LookPath("git"); err != nil {
 		return fmt.Errorf("git not found on PATH (snapshots need git; everything else works without it)")
 	}
-	if _, err := git(root, "init", "--quiet"); err != nil {
-		return err
-	}
-	ignore := filepath.Join(root, ".gitignore")
-	if _, err := os.Stat(ignore); os.IsNotExist(err) {
-		content := "# movielily: version the instructions, never the media\n" +
-			"footage/\n" +
-			"*.mp4\n*.mov\n*.mkv\n*.webm\n" +
-			"# regenerable: review playlists and rendered title-card cache\n" +
-			"*.review.edl\n" +
-			".cache/\n"
-		if err := os.WriteFile(ignore, []byte(content), 0o644); err != nil {
-			return err
+	if !hasSnapshotRepo(root) {
+		if _, err := git(root, "init", "--quiet", "--initial-branch=main"); err != nil {
+			if _, err := git(root, "init", "--quiet"); err != nil {
+				return err
+			}
+			if _, err := git(root, "branch", "-M", "main"); err != nil {
+				return err
+			}
 		}
+	}
+	if err := project.EnsureGitignore(root); err != nil {
+		return err
 	}
 	return nil
 }

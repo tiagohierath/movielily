@@ -75,7 +75,7 @@ func clockChapters(t float64) string {
 }
 
 // newFrameCmd grabs one full-resolution frame as a PNG: the thumbnail
-// workflow. Footage is only read; the PNG must land outside footage/.
+// workflow. Source media is only read; the PNG must land outside media folders.
 func newFrameCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "frame <clip> <time> <out.png>",

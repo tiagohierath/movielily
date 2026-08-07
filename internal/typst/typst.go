@@ -161,6 +161,28 @@ func Render(p *project.Project, template, text string) (string, error) {
 	return out, nil
 }
 
+// Compile turns a Typst source file into an output file (usually PDF), using
+// the same PATH-or-nix lookup as title-card rendering.
+func Compile(src, out string) error {
+	argv, err := typstCommand()
+	if err != nil {
+		return err
+	}
+	args := append(argv[1:], "compile", src, out)
+	cmd := exec.Command(argv[0], args...)
+	if argv[0] == "nix" {
+		for _, kv := range os.Environ() {
+			if !strings.HasPrefix(kv, "LD_LIBRARY_PATH=") {
+				cmd.Env = append(cmd.Env, kv)
+			}
+		}
+	}
+	if msg, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("typst: %s", strings.TrimSpace(string(msg)))
+	}
+	return nil
+}
+
 // ppiFor picks the raster density that makes the template's page width come
 // out at framePx pixels. Templates whose page width can't be read (custom
 // sizes buried in code) get the 144 default, which suits a 720pt page at

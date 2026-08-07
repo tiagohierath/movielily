@@ -50,7 +50,7 @@ func soleSequence(p *project.Project) (string, error) {
 	var seqs []string
 	for _, en := range entries {
 		n := en.Name()
-		if en.IsDir() || strings.HasPrefix(n, ".") || !strings.HasSuffix(n, ".txt") {
+		if en.IsDir() || !project.IsSequenceFileName(n) {
 			continue
 		}
 		seqs = append(seqs, strings.TrimSuffix(n, ".txt"))

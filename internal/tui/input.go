@@ -80,6 +80,10 @@ func (e *editor) handleInput(chunk []byte) (quit bool) {
 				e.startDurEdit()
 			case 'c':
 				e.startGradeEdit()
+			case 'm':
+				e.cycleImagePan()
+			case 'M':
+				e.togglePanEase()
 			case '+', '=':
 				e.nudge(1)
 			case '-':
@@ -260,6 +264,8 @@ var palette = []palCmd{
 	{"section", "insert a section header below the cursor", func(e *editor) bool { e.addSection(); return false }},
 	{"note", "edit the scene's note (or card text)", func(e *editor) bool { e.startEdit(); return false }},
 	{"duration", "edit the scene's duration (gain on beds)", func(e *editor) bool { e.startDurEdit(); return false }},
+	{"pan", "cycle image pan direction", func(e *editor) bool { e.cycleImagePan(); return false }},
+	{"pan-ease", "cycle selected image pan easing", func(e *editor) bool { e.togglePanEase(); return false }},
 	{"search", "find scenes by file name or note", func(e *editor) bool { e.startSearch(); return false }},
 	{"delete", "cut the marked scenes (or the current one)", func(e *editor) bool { e.deleteSel(); return false }},
 	{"yank", "copy the marked scenes (or the current one)", func(e *editor) bool { e.yank(); return false }},
