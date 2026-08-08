@@ -121,6 +121,12 @@ movielily youtube --title "My video essay"
 Put images in `images/stills/` first. `essay` keeps the narration continuous
 and makes each chosen image full-screen until the next marker.
 
+You can also open an image board while arranging images (for example,
+`movielily board images --open`). Its small audio strip plays files from
+`audio/`, shows the exact timestamp, and has start, end, play/pause, and
+±5-second controls. Clicking an image jumps the narration clock to that
+image's current start time.
+
 ### Project layout
 
 ```bash
@@ -349,8 +355,16 @@ into `chapters` with correct timestamps.
 
 `movielily silences gravacao.wav` lists the spoken stretches of a continuous
 recording (everything between pauses of 0.6s+ under -35dB; tune with
-`--noise`, `--gap`, `--pad`). `--keep` appends them to selects.txt as
-numbered takes, ready for `seq from-selects`.
+`--noise`, `--gap`, `--pad`). `--keep` adds them to selects.txt as numbered
+takes, ready for `seq from-selects`; it never changes the recording and is
+safe to run again without duplicating the same take.
+
+In `movielily edit`, select a narration audio scene and press `:` then type
+`cut silences`. This uses deliberately generous settings: only pauses at least
+1.2 seconds that are below -45dB split a take, and 0.4 seconds remains around
+each spoken stretch. It creates reviewable selects only — never a destructive
+audio edit — so real words are protected even at the cost of leaving short
+pauses intact.
 
 ## Audio beds
 

@@ -276,6 +276,7 @@ var palette = []palCmd{
 	{"grade", "colour grade / film grain for the scene", func(e *editor) bool { e.startGradeEdit(); return false }},
 	{"snapshots", "the git version graph (Tab does this too)", func(e *editor) bool { e.openSnapshots(); return false }},
 	{"youtube", "post the last render to YouTube (private)", func(e *editor) bool { e.wantYoutube = true; return false }},
+	{"cut-silences", "safely find only long pauses in selected narration", func(e *editor) bool { e.wantSilences = true; return false }},
 	{"help", "the key reference", func(e *editor) bool { e.helpOpen = true; return false }},
 	{"top", "jump to the first scene", func(e *editor) bool { e.cursor = 0; return false }},
 	{"bottom", "jump to the last scene", func(e *editor) bool {

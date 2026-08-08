@@ -25,3 +25,15 @@ func TestEssayLinesBuildsNarrationAndTimedImages(t *testing.T) {
 		}
 	}
 }
+
+func TestSilenceSelectKeyIgnoresNoteButKeepsRegion(t *testing.T) {
+	a := model.Select{File: "audio/voice.wav", In: 1.04, Out: 9.06, Note: "take 1"}
+	b := model.Select{File: "audio/voice.wav", In: 1.0, Out: 9.1, Note: "renamed"}
+	c := model.Select{File: "audio/voice.wav", In: 1.0, Out: 9.2, Note: "take 2"}
+	if silenceSelectKey(a) != silenceSelectKey(b) {
+		t.Fatal("the same rounded silence region should be idempotent")
+	}
+	if silenceSelectKey(a) == silenceSelectKey(c) {
+		t.Fatal("different regions must remain distinct")
+	}
+}

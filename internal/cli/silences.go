@@ -44,7 +44,16 @@ func newSilencesCmd() *cobra.Command {
 				return nil
 			}
 			stored := p.StoreName(args[0])
+			existing, err := store.LoadSelects(p.Selects())
+			if err != nil {
+				return err
+			}
+			seen := make(map[string]bool, len(existing))
+			for _, s := range existing {
+				seen[silenceSelectKey(s)] = true
+			}
 			kept := 0
+			skipped := 0
 			var spoken float64
 			for i, r := range regions {
 				in := r[0] - pad
@@ -60,16 +69,26 @@ func newSilencesCmd() *cobra.Command {
 					model.FormatSeconds(round1(in)), model.FormatSeconds(round1(out)), model.FormatSeconds(round1(out-in)))
 				if keep {
 					s := model.Select{File: stored, In: round1(in), Out: round1(out), Note: fmt.Sprintf("take %d", i+1)}
-					if err := store.Append(p.Selects(), s.String()); err != nil {
-						return err
+					key := silenceSelectKey(s)
+					if seen[key] {
+						skipped++
+					} else {
+						if err := store.Append(p.Selects(), s.String()); err != nil {
+							return err
+						}
+						seen[key] = true
+						kept++
 					}
-					kept++
 				}
 			}
 			fmt.Printf("\n%d spoken stretch(es), %ss of speech in a %ss recording\n",
 				len(regions), model.FormatSeconds(round1(spoken)), model.FormatSeconds(round1(total)))
 			if keep {
-				fmt.Printf("appended %d select(s) · next: movielily seq from-selects <name>\n", kept)
+				fmt.Printf("added %d new select(s)", kept)
+				if skipped > 0 {
+					fmt.Printf(" · skipped %d already present", skipped)
+				}
+				fmt.Println(" · source audio unchanged · next: movielily seq from-selects <name>")
 			} else {
 				fmt.Println("nothing written · re-run with --keep to append these to selects.txt")
 			}
@@ -81,4 +100,10 @@ func newSilencesCmd() *cobra.Command {
 	cmd.Flags().Float64Var(&pad, "pad", 0.15, "seconds kept around each stretch so words are never clipped")
 	cmd.Flags().BoolVar(&keep, "keep", false, "append the stretches to selects.txt")
 	return cmd
+}
+
+// silenceSelectKey identifies the meaningful part of a generated select. It
+// makes --keep safe to repeat: the same audio region is never appended twice.
+func silenceSelectKey(s model.Select) string {
+	return fmt.Sprintf("%s|%.1f|%.1f", s.File, s.In, s.Out)
 }

@@ -306,3 +306,37 @@ func (e *editor) youtubeOp(st *xterm.State) {
 	e.onSceneChange()
 	e.out.Flush()
 }
+
+// silencesOp delegates to the CLI so its conservative defaults and idempotent
+// select handling stay identical whether the command is used here or in a
+// shell. It deliberately never changes the source audio or current sequence.
+func (e *editor) silencesOp(st *xterm.State) {
+	if e.cursor < 0 || e.cursor >= len(e.items) || !model.IsAudioFile(e.items[e.cursor].File) {
+		e.status = "cut silences: select a narration audio scene first"
+		return
+	}
+	file := e.items[e.cursor].File
+	if _, err := e.p.ResolveFootage(file); err != nil {
+		e.status = "cut silences: " + err.Error()
+		return
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		exe = "movielily"
+	}
+	e.suspend(st)
+	fmt.Println("finding only clearly long, quiet pauses — source audio will not be changed…")
+	cmd := exec.Command(exe, "silences", file, "--keep", "--noise", "-45", "--gap", "1.2", "--pad", "0.4")
+	cmd.Dir = e.p.Root
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	runErr := cmd.Run()
+	e.resume(st)
+	if runErr != nil {
+		e.status = "cut silences: " + runErr.Error()
+	} else {
+		e.status = "safe silence selects ready — source unchanged; use seq from-selects to build a cut"
+	}
+	e.redraw(true)
+	e.onSceneChange()
+	e.out.Flush()
+}

@@ -82,6 +82,7 @@ type boardPayload struct {
 	TotalFrames   int            `json:"total_frames"`
 	Blocks        []boardBlock   `json:"blocks"`
 	FootageImages []footageImage `json:"footage_images"`
+	AudioFiles    []footageImage `json:"audio_files"`
 }
 
 type boardBlock struct {
@@ -265,6 +266,10 @@ func (s *boardServer) payload() (boardPayload, error) {
 	if err != nil {
 		return boardPayload{}, err
 	}
+	audio, err := listBoardAudio(s.p)
+	if err != nil {
+		return boardPayload{}, err
+	}
 	total := 0.0
 	for _, b := range blocks {
 		if b.Kind == "image" {
@@ -281,6 +286,7 @@ func (s *boardServer) payload() (boardPayload, error) {
 		TotalFrames:   int(total*float64(s.p.Config.FPS) + 0.5),
 		Blocks:        blocks,
 		FootageImages: images,
+		AudioFiles:    audio,
 	}, nil
 }
 
@@ -435,6 +441,29 @@ func listStoryboardImages(p *project.Project) ([]string, error) {
 	return images, nil
 }
 
+func listBoardAudio(p *project.Project) ([]footageImage, error) {
+	var out []footageImage
+	err := filepath.WalkDir(p.AudioDir(), func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !model.IsAudioFile(d.Name()) {
+			return nil
+		}
+		file := p.StoreName(path)
+		out = append(out, footageImage{File: file, MediaURL: "/media?file=" + urlQueryEscape(file)})
+		return nil
+	})
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].File < out[j].File })
+	return out, nil
+}
+
 func isStoryboardImage(name string) bool {
 	switch strings.ToLower(filepath.Ext(name)) {
 	case ".png", ".jpg", ".jpeg", ".webp":
@@ -500,6 +529,9 @@ select:disabled { color: var(--muted); background: var(--soft); }
 .counts { color: var(--muted); white-space: nowrap; }
 .scene-filter { color: var(--muted); white-space: nowrap; }
 .transport { display: flex; gap: .35rem; align-items: center; flex-wrap: wrap; }
+.audio-strip { display: flex; gap: .28rem; align-items: center; color: var(--muted); font-variant-numeric: tabular-nums; }
+.audio-strip select { max-width: 13rem; min-width: 8rem; }
+.audio-time { min-width: 4.8rem; text-align: right; }
 .status { color: var(--muted); min-width: 5rem; text-align: right; }
 .layout { height: calc(100vh - 55px); display: grid; grid-template-columns: 170px minmax(360px, 1fr) 10px var(--preview-w); overflow: hidden; }
 .unsorted { border-right: 1px solid var(--line); background: linear-gradient(90deg, #e9e4d7 0, #dfdacb 100%); padding: .8rem .7rem; overflow: auto; box-shadow: inset -1px 0 0 var(--hi); }
@@ -608,6 +640,15 @@ select:disabled { color: var(--muted); background: var(--soft); }
   <input id="search" type="search" placeholder="Search">
   <div class="transport">
     <button id="addImages">Add Images</button>
+    <span class="audio-strip" title="Narration clock for syncing images">
+      <select id="audioSelect"><option value="">Audio…</option></select>
+      <button id="audioStart" class="icon-only" title="Audio start"></button>
+      <button id="audioBack" class="icon-only" title="Back 5 seconds"></button>
+      <button id="audioPlay" class="icon-only" title="Play audio"></button>
+      <button id="audioForward" class="icon-only" title="Forward 5 seconds"></button>
+      <button id="audioEnd" class="icon-only" title="Audio end"></button>
+      <span id="audioTime" class="audio-time">00:00 / 00:00</span>
+    </span>
     <button id="undo" title="Undo last edit (Ctrl+Z)" disabled>Undo</button>
     <button id="start">Start</button>
     <button id="prev">Prev</button>
@@ -620,6 +661,7 @@ select:disabled { color: var(--muted); background: var(--soft); }
     <span class="status" id="status">Loading</span>
   </div>
   <input id="filePick" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
+  <audio id="audioPlayer" preload="metadata"></audio>
 </header>
 <main class="layout">
   <aside class="unsorted" id="unsortedPane">
@@ -706,6 +748,11 @@ function setButtonContent(id, iconName, label) {
 }
 function initButtonIcons() {
   setButtonContent("addImages", "image-plus", "Add Images");
+	setButtonContent("audioStart", "skip-back", "Audio start");
+	setButtonContent("audioBack", "step-back", "Back 5 seconds");
+	setButtonContent("audioPlay", "play", "Play audio");
+	setButtonContent("audioForward", "step-forward", "Forward 5 seconds");
+	setButtonContent("audioEnd", "skip-forward", "Audio end");
   setButtonContent("undo", "rotate-ccw", "Undo");
   setButtonContent("start", "skip-back", "Start");
   setButtonContent("prev", "step-back", "Prev");
@@ -719,6 +766,9 @@ function initButtonIcons() {
 function setPlayButton(isPlaying) {
   setButtonContent("play", isPlaying ? "pause" : "play", isPlaying ? "Pause" : "Play");
 }
+function setAudioPlayButton(isPlaying) {
+  setButtonContent("audioPlay", isPlaying ? "pause" : "play", isPlaying ? "Pause audio" : "Play audio");
+}
 function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
 function mediaURL(file) { return "/media?file=" + encodeURIComponent(file); }
 function stem(file) { return file.replace(/\.[^.]+$/, ""); }
@@ -729,6 +779,45 @@ function secToTime(s) {
   var m = Math.floor(Math.max(0, s) / 60);
   var rest = (Math.max(0, s) - m * 60).toFixed(2).padStart(5, "0");
   return String(m).padStart(2, "0") + ":" + rest;
+}
+function audioTimeText(s) {
+  if (!isFinite(s) || s < 0) s = 0;
+  var m = Math.floor(s / 60);
+  var rest = Math.floor(s % 60);
+  return String(m).padStart(2, "0") + ":" + String(rest).padStart(2, "0");
+}
+function renderAudioStrip() {
+  var select = qs("#audioSelect");
+  var current = select.value;
+  select.innerHTML = '<option value="">Audio…</option>' + (state.audio_files || []).map(function(a) {
+    return '<option value="' + escapeHTML(a.file) + '">' + escapeHTML(a.file) + '</option>';
+  }).join("");
+  if ((state.audio_files || []).some(function(a) { return a.file === current; })) select.value = current;
+  else if ((state.audio_files || []).length === 1) { select.value = state.audio_files[0].file; loadAudio(); }
+  updateAudioClock();
+}
+function updateAudioClock() {
+  var a = qs("#audioPlayer");
+  qs("#audioTime").textContent = audioTimeText(a.currentTime) + " / " + audioTimeText(a.duration);
+  setAudioPlayButton(!a.paused);
+}
+function loadAudio() {
+  var file = qs("#audioSelect").value;
+  var a = qs("#audioPlayer");
+  a.pause();
+  a.src = file ? mediaURL(file) : "";
+  a.load();
+  updateAudioClock();
+}
+function seekAudio(delta) {
+  var a = qs("#audioPlayer");
+  if (!a.src) return;
+  a.currentTime = Math.max(0, Math.min(isFinite(a.duration) ? a.duration : Infinity, a.currentTime + delta));
+}
+function toggleAudio() {
+  var a = qs("#audioPlayer");
+  if (!a.src) return;
+  if (a.paused) a.play(); else a.pause();
 }
 function durationOf(b) { return Number((b && b.item && b.item.Dur) || 0); }
 function framesOf(b) { return Math.max(1, Math.round(durationOf(b) * state.fps)); }
@@ -1039,6 +1128,7 @@ async function load() {
   recalc();
   selectedId = selectedId || (shots()[0] && shots()[0].id) || null;
   render();
+  renderAudioStrip();
   updateUndoButton();
   setStatus("Saved");
 }
@@ -1059,6 +1149,7 @@ async function uploadFiles(files) {
   blocks = state.blocks || [];
   recalc();
   render();
+  renderAudioStrip();
   setStatus("Added " + data.imported);
 }
 function render() {
@@ -1397,6 +1488,8 @@ function select(id, scroll) {
   selectedId = id;
   var b = selectedBlock();
   if (b) playTime = b.start || 0;
+  var audio = qs("#audioPlayer");
+  if (b && audio.src) audio.currentTime = b.start || 0;
   render();
   if (scroll !== false) {
     var node = document.querySelector("[data-id='" + id + "']");
@@ -1531,6 +1624,19 @@ function escapeHTML(s) {
 initButtonIcons();
 qs("#search").addEventListener("input", render);
 qs("#addImages").addEventListener("click", function() { qs("#filePick").click(); });
+qs("#audioSelect").addEventListener("change", loadAudio);
+qs("#audioStart").addEventListener("click", function() { seekAudio(-Infinity); });
+qs("#audioBack").addEventListener("click", function() { seekAudio(-5); });
+qs("#audioPlay").addEventListener("click", toggleAudio);
+qs("#audioForward").addEventListener("click", function() { seekAudio(5); });
+qs("#audioEnd").addEventListener("click", function() {
+  var audio = qs("#audioPlayer");
+  if (isFinite(audio.duration)) audio.currentTime = audio.duration;
+});
+qs("#audioPlayer").addEventListener("timeupdate", updateAudioClock);
+qs("#audioPlayer").addEventListener("loadedmetadata", updateAudioClock);
+qs("#audioPlayer").addEventListener("play", updateAudioClock);
+qs("#audioPlayer").addEventListener("pause", updateAudioClock);
 qs("#filePick").addEventListener("change", function(e) {
   uploadFiles(e.target.files);
   e.target.value = "";

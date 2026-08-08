@@ -129,6 +129,7 @@ type editor struct {
 	wantVim      bool
 	wantReselect bool
 	wantYoutube  bool
+	wantSilences bool
 
 	// layout (recomputed on resize) — three panes: list | video | notes
 	leftW, rightW              int // leftW = list; rightW = notes (alias notesW)
@@ -291,6 +292,10 @@ func Edit(p *project.Project, name string) error {
 			if e.wantYoutube {
 				e.wantYoutube = false
 				e.youtubeOp(st)
+			}
+			if e.wantSilences {
+				e.wantSilences = false
+				e.silencesOp(st)
 			}
 			if quit {
 				if e.dirty && !e.discard {
