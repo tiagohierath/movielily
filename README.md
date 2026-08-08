@@ -329,7 +329,8 @@ direct `https://…png`/`jpg`/`webp` URL; Movielily downloads a project copy
 before adding it, so later renders do not depend on your Downloads folder.
 On a Linux Wayland desktop, the quicker route is: copy an image in the
 browser, select the narration scene, and press `i`. The PNG is imported into
-`images/stills/` and the only remaining question is when to show it.
+`images/stills/` and immediately fills that scene. Use `:overlay` only when
+you want custom timing or placement.
 
 The file can also be a typst template from `titles/`: then the overlay's
 note (tags stripped) is the card's text, rendered on a transparent page.

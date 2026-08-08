@@ -253,7 +253,7 @@ func (e *editor) pasteClipboardOverlay() {
 				if e.editWhat != editOvlSpec {
 					return
 				}
-				e.status = "clipboard image ready — set timing (0 0 full fills the narration)"
+				e.finishClipboardOverlay()
 				return
 			}
 		}
@@ -273,13 +273,22 @@ func (e *editor) pasteClipboardOverlay() {
 			return
 		}
 		e.pendingFile = stored
-		e.editWhat = editOvlSpec
-		e.inputBytes = []byte("0 0 " + model.DefaultPlace)
-		e.status = "clipboard image ready — set timing (0 0 full fills the narration)"
+		e.finishClipboardOverlay()
 		return
 	}
 	e.mode = modeNormal
 	e.status = "clipboard has no PNG image or usable image path/URL"
+}
+
+// finishClipboardOverlay is the deliberately boring default: the copied
+// image fills the selected narration scene until it ends. Custom timing stays
+// available through :overlay, but the common "show this image" action is one
+// key and no follow-up question.
+func (e *editor) finishClipboardOverlay() {
+	e.editWhat = editOvlSpec
+	e.inputBytes = []byte("0 0 " + model.DefaultPlace)
+	e.commitOvlSpec()
+	e.status = "clipboard image added full-screen · w saves · :overlay is for custom timing"
 }
 
 func (e *editor) storeClipboardPNG(data []byte) (string, error) {

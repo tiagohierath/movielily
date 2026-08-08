@@ -237,7 +237,7 @@ func (e *editor) drawHelp() {
 		"  g/G      top / bottom    t    duration (gain on beds) ",
 		"  [/]      prev/next sect  c    colour-grade / grain    ",
 		"  m/M      image pan / pan easing                         ",
-		"  i        add copied browser image at the cursor         ",
+		"  i        add copied browser image full-screen           ",
 		"  e        edit note or card text                       ",
 		"  space    mark            y    yank marked/current     ",
 		"  d        cut             p    paste below cursor      ",
