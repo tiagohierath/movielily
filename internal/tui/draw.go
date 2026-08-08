@@ -26,6 +26,14 @@ import (
 // text (the exact tokens stored in the note) so the panel and the text form
 // are visibly the same thing.
 func (e *editor) drawGrade() {
+	// A terminal can deliver a buffered key just as a sequence is reopened or
+	// replaced. Never let the auxiliary grade view index an absent scene.
+	if e.cursor < 0 || e.cursor >= len(e.items) {
+		e.screen = 0
+		e.gradeIdx = 0
+		e.status = "grade closed: no scene selected"
+		return
+	}
 	io.WriteString(e.out, clearScreen)
 	if e.kitty {
 		kittyDeleteAll(e.out)

@@ -603,6 +603,15 @@ func (e *editor) setGradeParam(name string, v float64) {
 // handleGrade drives the grade panel: up/down pick a parameter, left/right (or
 // h/l, -/+) adjust it, 0 resets it to neutral, r resets all, Tab/q/Esc closes.
 func (e *editor) handleGrade(chunk []byte) {
+	if e.cursor < 0 || e.cursor >= len(e.items) {
+		e.screen = 0
+		e.gradeIdx = 0
+		e.status = "grade closed: no scene selected"
+		e.redraw(true)
+		e.onSceneChange()
+		e.out.Flush()
+		return
+	}
 	specs := grade.Specs()
 	if len(chunk) >= 3 && chunk[0] == 0x1b && chunk[1] == '[' {
 		switch chunk[2] {

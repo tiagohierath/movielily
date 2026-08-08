@@ -1,6 +1,10 @@
 package tui
 
-import "testing"
+import (
+	"bufio"
+	"bytes"
+	"testing"
+)
 
 func TestNormaliseDroppedImage(t *testing.T) {
 	for in, want := range map[string]string{
@@ -13,6 +17,16 @@ func TestNormaliseDroppedImage(t *testing.T) {
 		}
 	}
 }
+
+func TestGradePanelWithNoSceneClosesInsteadOfPanicking(t *testing.T) {
+	e := &editor{screen: 2, cursor: 0, out: newTestWriter()}
+	e.handleGrade([]byte("l"))
+	if e.screen != 0 {
+		t.Fatalf("grade screen = %d, want editor screen", e.screen)
+	}
+}
+
+func newTestWriter() *bufio.Writer { return bufio.NewWriter(&bytes.Buffer{}) }
 
 // visTrunc is what keeps a styled right-pane label from wrapping onto — and
 // corrupting — the left pane, so it has to measure width by visible cells while
