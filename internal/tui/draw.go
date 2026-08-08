@@ -220,7 +220,7 @@ func (e *editor) drawFooter() {
 	case e.status != "":
 		s = " " + e.status
 	default:
-		s = " ? help · : commands · j/k · ⏎ in/out · r watch · c grade · m pan · e note · t number · w save"
+		s = " ? help · i clipboard image · : commands · j/k · ⏎ in/out · r watch · c grade · m pan · e note · t number · w save"
 	}
 	io.WriteString(e.out, moveTo(e.h, 1)+"\x1b[7m"+padRight(trunc(s, e.w), e.w)+"\x1b[0m")
 }
@@ -237,6 +237,7 @@ func (e *editor) drawHelp() {
 		"  g/G      top / bottom    t    duration (gain on beds) ",
 		"  [/]      prev/next sect  c    colour-grade / grain    ",
 		"  m/M      image pan / pan easing                         ",
+		"  i        add copied browser image at the cursor         ",
 		"  e        edit note or card text                       ",
 		"  space    mark            y    yank marked/current     ",
 		"  d        cut             p    paste below cursor      ",

@@ -228,6 +228,75 @@ func (e *editor) startOverlay() {
 	e.status = "overlay image — type/drop a local path or drop an https image URL (png keeps transparency)"
 }
 
+// pasteClipboardOverlay imports an image copied in a browser with one key.
+// On Wayland wl-paste exposes either the copied image/png bytes or plain text
+// (a file path/direct image URL), both of which use the same portable import
+// path as the ordinary overlay prompt.
+func (e *editor) pasteClipboardOverlay() {
+	e.startOverlay()
+	if e.mode != modeEdit || e.editWhat != editOvlFile {
+		return
+	}
+	types, err := exec.Command("wl-paste", "--list-types").Output()
+	if err != nil {
+		e.mode = modeNormal
+		e.status = "clipboard image needs wl-paste (or use :overlay)"
+		return
+	}
+	available := strings.Fields(string(types))
+	for _, typ := range available {
+		if strings.HasPrefix(typ, "text/plain") || typ == "text/uri-list" {
+			out, err := exec.Command("wl-paste", "--no-newline", "--type", typ).Output()
+			if err == nil && strings.TrimSpace(string(out)) != "" {
+				e.inputBytes = out
+				e.commitOvlFile()
+				if e.editWhat != editOvlSpec {
+					return
+				}
+				e.status = "clipboard image ready — set timing (0 0 full fills the narration)"
+				return
+			}
+		}
+	}
+	for _, typ := range available {
+		if typ != "image/png" {
+			continue
+		}
+		out, err := exec.Command("wl-paste", "--type", typ).Output()
+		if err != nil || len(out) == 0 {
+			break
+		}
+		stored, err := e.storeClipboardPNG(out)
+		if err != nil {
+			e.mode = modeNormal
+			e.status = "clipboard image: " + err.Error()
+			return
+		}
+		e.pendingFile = stored
+		e.editWhat = editOvlSpec
+		e.inputBytes = []byte("0 0 " + model.DefaultPlace)
+		e.status = "clipboard image ready — set timing (0 0 full fills the narration)"
+		return
+	}
+	e.mode = modeNormal
+	e.status = "clipboard has no PNG image or usable image path/URL"
+}
+
+func (e *editor) storeClipboardPNG(data []byte) (string, error) {
+	if len(data) > 40*1024*1024 {
+		return "", fmt.Errorf("image is larger than 40 MB")
+	}
+	dir := filepath.Join(e.p.ImagesDir(), "stills")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	dst := availableImageName(dir, "clipboard.png")
+	if err := os.WriteFile(dst, data, 0o644); err != nil {
+		return "", err
+	}
+	return e.p.StoreName(dst), nil
+}
+
 func (e *editor) commitOvlFile() {
 	name := normaliseDroppedImage(strings.TrimSpace(string(e.inputBytes)))
 	// Image from source media, or a typst template (its text = the note: e edits).

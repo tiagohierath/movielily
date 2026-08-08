@@ -82,6 +82,8 @@ func (e *editor) handleInput(chunk []byte) (quit bool) {
 				e.startGradeEdit()
 			case 'm':
 				e.cycleImagePan()
+			case 'i':
+				e.pasteClipboardOverlay()
 			case 'M':
 				e.togglePanEase()
 			case '+', '=':
