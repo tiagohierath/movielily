@@ -2,6 +2,18 @@ package tui
 
 import "testing"
 
+func TestNormaliseDroppedImage(t *testing.T) {
+	for in, want := range map[string]string{
+		"'/tmp/my image.png'":        "/tmp/my image.png",
+		"/tmp/my\\ image.png":        "/tmp/my image.png",
+		"file:///tmp/my%20image.png": "/tmp/my image.png",
+	} {
+		if got := normaliseDroppedImage(in); got != want {
+			t.Errorf("normaliseDroppedImage(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 // visTrunc is what keeps a styled right-pane label from wrapping onto — and
 // corrupting — the left pane, so it has to measure width by visible cells while
 // letting ANSI SGR escapes through untouched.

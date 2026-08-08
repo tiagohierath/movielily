@@ -2,12 +2,17 @@ package tui
 
 import (
 	"fmt"
+	"io"
 	"movielily/internal/manim"
 	"movielily/internal/model"
 	"movielily/internal/typst"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"time"
 
 	xterm "golang.org/x/term"
 )
@@ -220,11 +225,11 @@ func (e *editor) startOverlay() {
 	e.mode = modeEdit
 	e.editWhat = editOvlFile
 	e.inputBytes = nil
-	e.status = "overlay image from fxs/, images/, storyboards/ or refs/ (png keeps transparency)"
+	e.status = "overlay image — type/drop a local path or drop an https image URL (png keeps transparency)"
 }
 
 func (e *editor) commitOvlFile() {
-	name := strings.TrimSpace(string(e.inputBytes))
+	name := normaliseDroppedImage(strings.TrimSpace(string(e.inputBytes)))
 	// Image from source media, or a typst template (its text = the note: e edits).
 	if strings.HasSuffix(name, ".typ") {
 		if _, err := typst.Resolve(e.p, name); err != nil {
@@ -234,15 +239,146 @@ func (e *editor) commitOvlFile() {
 		}
 		e.pendingFile = typst.StoreName(name)
 	} else {
-		if _, err := e.p.ResolveFootage(name); err != nil {
-			e.status = err.Error()
-			e.inputBytes = nil // stay in the prompt
-			return
+		if strings.HasPrefix(name, "http://") || strings.HasPrefix(name, "https://") {
+			stored, err := e.downloadOverlayImage(name)
+			if err != nil {
+				e.status = err.Error()
+				e.inputBytes = nil
+				return
+			}
+			e.pendingFile = stored
+		} else {
+			abs, err := e.p.ResolveFootage(name)
+			if err != nil {
+				e.status = err.Error()
+				e.inputBytes = nil // stay in the prompt
+				return
+			}
+			stored, err := e.copyDroppedOverlay(abs)
+			if err != nil {
+				e.status = err.Error()
+				e.inputBytes = nil
+				return
+			}
+			e.pendingFile = stored
 		}
-		e.pendingFile = e.p.StoreName(name)
 	}
 	e.editWhat = editOvlSpec
 	e.inputBytes = []byte("0 0 " + model.DefaultPlace)
+}
+
+// normaliseDroppedImage accepts the forms terminals commonly paste when a
+// file is dropped: a plain path, shell-quoted path, or file:// URL.
+func normaliseDroppedImage(name string) string {
+	name = strings.Trim(strings.TrimSpace(name), "\"'")
+	if u, err := url.Parse(name); err == nil && u.Scheme == "file" {
+		return u.Path
+	}
+	return strings.ReplaceAll(name, "\\ ", " ")
+}
+
+// copyDroppedOverlay brings an image dropped from outside the project into
+// images/stills. Keeping it inside the project makes the resulting sequence
+// portable and avoids a later render depending on Downloads or the desktop.
+func (e *editor) copyDroppedOverlay(abs string) (string, error) {
+	if !isOverlayImage(abs) {
+		return "", fmt.Errorf("%s is not a supported image (want png, jpg, jpeg, or webp)", filepath.Base(abs))
+	}
+	if rel, err := filepath.Rel(e.p.Root, abs); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return e.p.StoreName(abs), nil
+	}
+	dir := filepath.Join(e.p.ImagesDir(), "stills")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	dst := availableImageName(dir, filepath.Base(abs))
+	in, err := os.Open(abs)
+	if err != nil {
+		return "", err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return "", err
+	}
+	_, copyErr := io.Copy(out, in)
+	closeErr := out.Close()
+	if copyErr != nil {
+		_ = os.Remove(dst)
+		return "", copyErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(dst)
+		return "", closeErr
+	}
+	return e.p.StoreName(dst), nil
+}
+
+func (e *editor) downloadOverlayImage(rawURL string) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return "", fmt.Errorf("overlay URL must be a complete http(s) image URL")
+	}
+	resp, err := (&http.Client{Timeout: 30 * time.Second}).Get(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("download image: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("download image: website returned %s", resp.Status)
+	}
+	name := filepath.Base(u.Path)
+	if !isOverlayImage(name) {
+		return "", fmt.Errorf("download image: URL must end in .png, .jpg, .jpeg, or .webp")
+	}
+	dir := filepath.Join(e.p.ImagesDir(), "stills")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	dst := availableImageName(dir, name)
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return "", err
+	}
+	// A cap prevents an accidental page/video URL from filling the project.
+	n, copyErr := io.Copy(out, io.LimitReader(resp.Body, 40*1024*1024+1))
+	closeErr := out.Close()
+	if copyErr != nil {
+		_ = os.Remove(dst)
+		return "", copyErr
+	}
+	if n > 40*1024*1024 {
+		_ = os.Remove(dst)
+		return "", fmt.Errorf("download image: file is larger than 40 MB")
+	}
+	if closeErr != nil {
+		return "", closeErr
+	}
+	return e.p.StoreName(dst), nil
+}
+
+func isOverlayImage(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".png", ".jpg", ".jpeg", ".webp":
+		return true
+	default:
+		return false
+	}
+}
+
+func availableImageName(dir, name string) string {
+	name = filepath.Base(name)
+	ext := filepath.Ext(name)
+	base := strings.TrimSuffix(name, ext)
+	for n := 1; ; n++ {
+		candidate := filepath.Join(dir, name)
+		if n > 1 {
+			candidate = filepath.Join(dir, fmt.Sprintf("%s-%d%s", base, n, ext))
+		}
+		if _, err := os.Stat(candidate); os.IsNotExist(err) {
+			return candidate
+		}
+	}
 }
 
 // commitOvlSpec parses "at dur place" (dur 0 = until the scene ends) and

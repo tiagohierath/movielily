@@ -322,6 +322,12 @@ the scene ends), clamped to the scene. `place` is a corner plus width percent
 or `full`. PNG transparency is respected. Reorder the scene and its overlay
 lines travel with it. Overlays show in both export and review.
 
+In the TUI, run `:overlay` and drag an image file onto the terminal when it
+asks for the image. A file outside the project is copied into `images/stills/`
+automatically. If your browser drops an image URL instead, paste/drop its
+direct `https://…png`/`jpg`/`webp` URL; Movielily downloads a project copy
+before adding it, so later renders do not depend on your Downloads folder.
+
 The file can also be a typst template from `titles/`: then the overlay's
 note (tags stripped) is the card's text, rendered on a transparent page.
 That's the lower-third/citation workflow: `titles/lower.typ` (created with
