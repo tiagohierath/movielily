@@ -393,6 +393,8 @@ full-resolution still for the thumbnail.
 
 ## Posting to YouTube
 
+For the complete, copy-paste workflow, see [docs/youtube.md](docs/youtube.md).
+
 `movielily youtube` queues the last render in the shared YouTube pipeline. The
 navylily timer posts it privately on the cadence you selected; use
 `movielily youtube --now` only for an immediate private upload. It reuses the existing
@@ -402,6 +404,32 @@ The `youtube` entry in the TUI command palette (`:`) does the same. Uploads
 join the shared navylily queue and state, so the selected cadence applies to
 both Movielily renders and other queued videos. Override the destination queue
 with `MOVIELILY_YOUTUBE_QUEUE` if needed.
+
+### Render → queue → publish
+
+```bash
+# Render the finished cut.
+movielily export filme exports/video/filme.mp4
+
+# Add it to the shared YouTube queue. The title travels with the render.
+movielily youtube --title "Título do vídeo"
+
+# See its position and planned publishing date.
+nl-queue
+
+# Control the shared posting cadence whenever you want.
+~/projects/navylily-tools/youtube_upload.sh --cadence daily
+~/projects/navylily-tools/youtube_upload.sh --cadence weekly
+~/projects/navylily-tools/youtube_upload.sh --cadence monthly
+```
+
+The scheduled uploader posts one queued video at 18:00 São Paulo time. Weekly
+means Sunday; monthly means the first day of the month. Use `--now` only when
+you deliberately want to bypass the queue:
+
+```bash
+movielily youtube --now --title "Título do vídeo"
+```
 
 ## Snapshots and versions (git)
 
