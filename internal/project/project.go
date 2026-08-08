@@ -38,6 +38,7 @@ var projectSubdirs = []string{
 	"images/stills",
 	"images/backgrounds",
 	"refs/visual",
+	"refs/visual/bildkasten",
 	"refs/research",
 	"audio/dialogue",
 	"audio/music",
@@ -71,6 +72,7 @@ var projectFolderDocs = []folderDoc{
 	{"images/backgrounds/README.txt", "Backgrounds, plates and establishing image assets.\n"},
 	{"refs/README.txt", "Reference material for the film: visual refs, research images, mood boards and notes.\n"},
 	{"refs/visual/README.txt", "Visual references, composition refs, colour refs and mood material.\n"},
+	{"refs/visual/bildkasten/README.txt", "Bildkasten-selected visual references live here as symlinks, grouped by tag. Originals remain in Bildkasten's library.\n"},
 	{"refs/research/README.txt", "Research images and source material that are not part of the final cut.\n"},
 	{"audio/README.txt", "Audio source files. Suggested folders: dialogue/, music/, sfx/ and ambience/.\n"},
 	{"audio/dialogue/README.txt", "Voice, narration and dialogue takes.\n"},
@@ -152,6 +154,19 @@ func (p *Project) ScaffoldFiles() []string {
 		files = append(files, filepath.Join(p.Root, filepath.FromSlash(doc.Path)))
 	}
 	return files
+}
+
+// SnapshotPaths is the complete portable, text-only project surface. Git
+// snapshots stage only these paths, never arbitrary root files or media.
+func (p *Project) SnapshotPaths() []string {
+	paths := []string{
+		ConfigName, ".gitignore", "README.md", "markers.txt", "notes.txt", "selects.txt",
+		"scripts", "sequences", "titles", "anims", "grades",
+	}
+	for _, doc := range projectFolderDocs {
+		paths = append(paths, filepath.FromSlash(doc.Path))
+	}
+	return paths
 }
 
 func (p *Project) dirs(names []string) []string {
@@ -469,7 +484,10 @@ func EnsureGitignore(root string) error {
 		return err
 	}
 	if strings.Contains(string(current), gitignoreStart) {
-		return nil
+		if strings.Contains(string(current), "!/refs/visual/bildkasten/README.txt") {
+			return nil
+		}
+		return os.WriteFile(path, []byte(string(current)+"\n# Keep the Bildkasten folder label, never its linked media.\n!/refs/visual/bildkasten/\n!/refs/visual/bildkasten/README.txt\n"), 0o644)
 	}
 	next := string(current)
 	if strings.TrimSpace(next) != "" && !strings.HasSuffix(next, "\n") {
@@ -504,6 +522,8 @@ func GitignoreBlock() string {
 		gitignoreMediaFolder("storyboards", "inbox", "scenes") +
 		gitignoreMediaFolder("images", "stills", "backgrounds") +
 		gitignoreMediaFolder("refs", "visual", "research") +
+		"!/refs/visual/bildkasten/\n" +
+		"!/refs/visual/bildkasten/README.txt\n" +
 		gitignoreMediaFolder("audio", "dialogue", "music", "sfx", "ambience") +
 		gitignoreMediaFolder("fxs", "overlays", "mattes", "textures") +
 		"\n" +

@@ -86,8 +86,14 @@ func newSnapshotRestoreCmd() *cobra.Command {
 			if err := takeSnapshot("before restoring " + ref); err != nil {
 				return err
 			}
-			if _, err := git(p.Root, "checkout", ref, "--", "."); err != nil {
+			paths, err := snapshotFilesAt(p, ref)
+			if err != nil {
 				return err
+			}
+			if len(paths) > 0 {
+				if _, err := git(p.Root, append([]string{"checkout", ref, "--"}, paths...)...); err != nil {
+					return err
+				}
 			}
 			// Files that exist now but not in the snapshot survive a plain
 			// checkout; committing the restored state keeps history linear and
@@ -121,7 +127,7 @@ func takeSnapshotProject(p *project.Project, message string) error {
 	} else if err := project.EnsureGitignore(p.Root); err != nil {
 		return err
 	}
-	if _, err := git(p.Root, "add", "-A"); err != nil {
+	if _, err := git(p.Root, append([]string{"add", "-A", "--"}, p.SnapshotPaths()...)...); err != nil {
 		return err
 	}
 	if out, _ := git(p.Root, "status", "--porcelain"); out == "" {
@@ -137,6 +143,14 @@ func takeSnapshotProject(p *project.Project, message string) error {
 	id, _ := git(p.Root, "rev-parse", "--short", "HEAD")
 	fmt.Printf("snapshot %s: %s\n", id, message)
 	return nil
+}
+
+func snapshotFilesAt(p *project.Project, ref string) ([]string, error) {
+	out, err := git(p.Root, append([]string{"ls-tree", "-r", "--name-only", ref, "--"}, p.SnapshotPaths()...)...)
+	if err != nil || out == "" {
+		return nil, err
+	}
+	return strings.Split(out, "\n"), nil
 }
 
 func hasSnapshotRepo(root string) bool {

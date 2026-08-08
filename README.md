@@ -41,6 +41,8 @@ fetched ephemerally when missing.
 | `movielily seq audio <seq> <file> [--gain -12] [note]` | music/narration bed under the whole cut |
 | `movielily seq show <seq>` · `seq list` | inspect sequences |
 | `movielily board <seq>` | browser light table for image storyboards: add local images, sort, time, pan, preview, save EDL |
+| `movielily intake <boards|refs> <seq>` | explicitly append unused Bildkasten boards or tagged references to a cut |
+| `movielily sketch` | open Bildkasten storyboard mode for the current project |
 | `movielily edit [seq]` | the interactive editor (see keys below) |
 | `movielily review <seq> [--from N]` | watch the cut in mpv, simulated export, no render |
 | `movielily export <seq> <out.mp4> [--draft]` | render the real file (auto-snapshots; --draft = half-res quick look) |
@@ -88,9 +90,12 @@ colours them. Some tags are also switches:
 - `#-6db` / `#+3db` on a clip: adjust just that clip's level;
 - `#clean` on a clip/voice slice: highpass + gentle denoise for rough recordings;
 - `#duck` on a bed: sidechain-duck the music under the timeline's voice;
+- `#at_image_N` on a bed: begin at the Nth still image, recalculated whenever
+  shots are retimed or reordered; `#at_scene_N` does the same for any playable
+  scene (image, video, title, or animation).
 - `#at_S` `#from_S` `#for_S` on a bed: enter the film at second S, skip S
   seconds into the source, play for S seconds (music per section instead of
-  wall to wall).
+  wall to wall). A fixed `#at_S` wins when combined with an image/scene anchor.
 
 Clips whose file has no audio stream at all (some screen captures) export
 with silence automatically instead of failing.
@@ -137,6 +142,18 @@ text instructions trackable. For older projects, run:
 movielily doctor --fix
 ```
 
+Each film is self-contained: deleting its project directory removes only that
+film's instructions and local media. Bildkasten references sent into
+`refs/visual/bildkasten/` are symlinks, so the original library stays outside
+the film and is never moved or copied.
+
+For collaboration, `movielily snapshot` stages only the portable text surface:
+the cut, notes, templates, grades, scripts, configuration, and folder docs.
+Raw media, exports, caches, and Bildkasten links remain outside Git. A friend
+can clone the project, add their own media to the documented folders, and use
+the same sequence files. Run `movielily doctor` before the first push; it warns
+if an older project already has media tracked by Git.
+
 ### Browser board
 
 ```bash
@@ -151,6 +168,23 @@ simple vertical/horizontal pan, press play, then save. It writes the same
 
 Uploads from the browser land in `storyboards/inbox/`. The board scans
 `storyboards/`, `images/`, `refs/`, `fxs/` and legacy `footage/` recursively.
+
+### Bildkasten bridge
+
+Bildkasten is optional visual research and sketching support. From inside a
+project, `movielily sketch` opens Bildkasten against `refs/visual/` and writes
+new boards to `storyboards/inbox/`. It never edits the sequence by itself:
+
+```bash
+movielily sketch
+movielily intake boards main
+movielily intake refs main --tag cinematic
+```
+
+`intake boards` imports only unused boards from the inbox. `intake refs` reads
+the references linked by `bildkasten tags send <tag>` into
+`refs/visual/bildkasten/<tag>/`. Bildkasten's source/tags/query sidecar becomes
+the initial image note where available; the resulting cut remains plain text.
 
 ### Printable storyboard book
 
@@ -301,11 +335,22 @@ numbered takes, ready for `seq from-selects`.
 
 ## Audio beds
 
-`seq audio` lays a file under the whole cut from 0:00, mixed below the
+`seq audio` lays a file under the cut from 0:00 by default, mixed below the
 timeline's own sound at `--gain` dB (negative sits music under a voice; `0`
 suits narration over silent footage). It is cut when the video ends, never
 extends the runtime, and several beds stack. Both export and review play
 beds. Change the gain with `t` or `+`/`-` in the TUI.
+
+For an image animatic, anchor a cue to the cut instead of calculating seconds:
+
+```bash
+movielily seq audio main audio/dialogue/voice.mp3 --gain 0 "narration #at_image_34"
+movielily seq audio main audio/music/theme.mp3 --gain -14 "theme #at_scene_37 #duck"
+```
+
+The first cue starts at the 34th still image; the second starts at playable
+scene 37. Retiming any earlier shot recalculates their start time for both
+review and export. Use `#at_52.8` only when the cue must stay at a fixed time.
 
 ## review: watch without rendering
 

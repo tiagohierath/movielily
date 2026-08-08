@@ -70,6 +70,12 @@ func printDoctor(p *project.Project, fixed bool) error {
 	}
 
 	if hasSnapshotRepo(p.Root) {
+		if tracked, err := trackedMedia(p); err != nil {
+			return err
+		} else if len(tracked) > 0 {
+			fmt.Printf("git:       warning: %d media file(s) are already tracked\n", len(tracked))
+			fmt.Println("  media stays on disk, but remove it from Git before sharing: git rm --cached <file>")
+		}
 		branch, _ := git(p.Root, "branch", "--show-current")
 		if branch == "" {
 			branch = "(detached)"
@@ -101,6 +107,21 @@ func printDoctor(p *project.Project, fixed bool) error {
 		fmt.Printf("  %-11s %d file(s)\n", name+"/", counts[name])
 	}
 	return nil
+}
+
+func trackedMedia(p *project.Project) ([]string, error) {
+	var paths []string
+	for _, dir := range p.MediaDirs() {
+		rel, ok := p.RelPath(dir)
+		if ok {
+			paths = append(paths, rel)
+		}
+	}
+	out, err := git(p.Root, append([]string{"ls-files", "--"}, paths...)...)
+	if err != nil || out == "" {
+		return nil, err
+	}
+	return strings.Split(out, "\n"), nil
 }
 
 func missingProjectPaths(p *project.Project) []string {

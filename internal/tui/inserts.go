@@ -201,7 +201,7 @@ func (e *editor) commitBedGain() {
 	e.cursor = len(e.items) - 1
 	e.dirty = true
 	e.forceScene = true
-	e.status = fmt.Sprintf("bed %s at %sdB · tags place it: #at_ #from_ #for_ #duck (e edits) · w to save", e.pendingFile, trimf(db))
+	e.status = fmt.Sprintf("bed %s at %sdB · place: #at_image_ #at_scene_ #at_ #from_ #for_ #duck (e edits) · w to save", e.pendingFile, trimf(db))
 }
 
 func (e *editor) startOverlay() {

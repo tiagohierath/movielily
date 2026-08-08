@@ -12,6 +12,7 @@ import (
 	"movielily/internal/model"
 	"movielily/internal/project"
 	"movielily/internal/store"
+	"movielily/internal/timeline"
 	"movielily/internal/typst"
 )
 
@@ -216,12 +217,11 @@ func reviewArgs(p *project.Project, name string, items []model.SequenceItem, fro
 		return vg.String() + ";" + audio
 	}
 
-	var bedItems []model.SequenceItem
-	for _, it := range items {
-		if it.IsAudio() {
-			bedItems = append(bedItems, it)
-		}
+	plan, _, err := timeline.Resolve(p.SequencesDir(), items)
+	if err != nil {
+		return nil, 0, 0, 0, err
 	}
+	bedItems := plan.Beds
 	beds = len(bedItems)
 	if beds == 0 {
 		audio := ""

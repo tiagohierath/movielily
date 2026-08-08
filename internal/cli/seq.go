@@ -186,11 +186,12 @@ func newSeqAudioCmd() *cobra.Command {
 	var gain float64
 	cmd := &cobra.Command{
 		Use:   "audio <sequence> <file> [note...]",
-		Short: "Append a background audio bed (music/narration under the whole cut)",
+		Short: "Append an audio bed (music/narration placed under the cut)",
 		Long: "audio adds a background bed: the file plays from the start of the cut,\n" +
 			"mixed under the clips' own sound, and stops when the video ends. Use --gain\n" +
-			"to sit music below the voice (e.g. --gain -12). Beds occupy no timeline\n" +
-			"slot; both export and review play them.",
+			"to sit music below the voice (e.g. --gain -12). Put #at_image_34 in its\n" +
+			"note to follow the 34th still as timing changes, or #at_scene_34 for any\n" +
+			"playable scene. Beds occupy no timeline slot; review and export both play them.",
 		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p, err := project.Open()
