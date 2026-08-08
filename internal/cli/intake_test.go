@@ -11,7 +11,7 @@ import (
 	"movielily/internal/store"
 )
 
-func TestIntakeImagesUsesBildkastenSidecarAndSkipsDuplicates(t *testing.T) {
+func TestIntakeImagesUsesPictogrepSidecarAndSkipsDuplicates(t *testing.T) {
 	p, err := project.Init(filepath.Join(t.TempDir(), "film"), "film")
 	if err != nil {
 		t.Fatal(err)

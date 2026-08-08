@@ -16,7 +16,7 @@ import (
 	"movielily/internal/store"
 )
 
-type bildkastenMeta struct {
+type pictogrepMeta struct {
 	Tags  []string `json:"tags"`
 	Query string   `json:"query"`
 }
@@ -26,11 +26,11 @@ func newIntakeCmd() *cobra.Command {
 	var tag string
 	cmd := &cobra.Command{
 		Use:   "intake <boards|refs> <sequence>",
-		Short: "Append unused Bildkasten boards or tagged references to a sequence",
-		Long: "intake is the explicit bridge from Bildkasten into a film. boards reads\n" +
-			"storyboards/inbox/; refs reads refs/visual/bildkasten/ (or just one tag\n" +
+		Short: "Append unused Pictogrep boards or tagged references to a sequence",
+		Long: "intake is the explicit bridge from Pictogrep into a film. boards reads\n" +
+			"storyboards/inbox/; refs reads refs/visual/pictogrep/ (or just one tag\n" +
 			"with --tag). It appends only unused image paths and leaves source media\n" +
-			"untouched. Bildkasten storyboard sidecars provide the initial note/tags.",
+			"untouched. Pictogrep storyboard sidecars provide the initial note/tags.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p, err := project.Open()
@@ -53,7 +53,7 @@ func newIntakeCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().IntVar(&frames, "frames", 48, "default still duration in frames")
-	cmd.Flags().StringVar(&tag, "tag", "", "only import this Bildkasten reference tag (refs only)")
+	cmd.Flags().StringVar(&tag, "tag", "", "only import this Pictogrep reference tag (refs only)")
 	return cmd
 }
 
@@ -65,7 +65,7 @@ func intakeRoot(p *project.Project, source, tag string) (string, error) {
 		}
 		return p.StoryboardInboxDir(), nil
 	case "refs":
-		root := filepath.Join(p.RefsDir(), "visual", "bildkasten")
+		root := filepath.Join(p.RefsDir(), "visual", "pictogrep")
 		if tag == "" {
 			return root, nil
 		}
@@ -143,7 +143,7 @@ func intakeNote(image string) string {
 	if err != nil {
 		return note
 	}
-	var meta bildkastenMeta
+	var meta pictogrepMeta
 	if json.Unmarshal(body, &meta) != nil {
 		return note
 	}

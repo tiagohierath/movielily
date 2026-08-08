@@ -42,8 +42,8 @@ fetched ephemerally when missing.
 | `movielily seq audio <seq> <file> [--gain -12] [note]` | music/narration bed under the whole cut |
 | `movielily seq show <seq>` · `seq list` | inspect sequences |
 | `movielily board <seq>` | browser light table for image storyboards: add local images, sort, time, pan, preview, save EDL |
-| `movielily intake <boards|refs> <seq>` | explicitly append unused Bildkasten boards or tagged references to a cut |
-| `movielily sketch` | open Bildkasten storyboard mode for the current project |
+| `movielily intake <boards|refs> <seq>` | explicitly append unused Pictogrep boards or tagged references to a cut |
+| `movielily sketch` | open Pictogrep storyboard mode for the current project |
 | `movielily edit [seq]` | the interactive editor (see keys below) |
 | `movielily review <seq> [--from N]` | watch the cut in mpv, simulated export, no render |
 | `movielily export <seq> <out.mp4> [--draft]` | render the real file (auto-snapshots; --draft = half-res quick look) |
@@ -168,13 +168,13 @@ movielily doctor --fix
 ```
 
 Each film is self-contained: deleting its project directory removes only that
-film's instructions and local media. Bildkasten references sent into
-`refs/visual/bildkasten/` are symlinks, so the original library stays outside
+film's instructions and local media. Pictogrep references sent into
+`refs/visual/pictogrep/` are symlinks, so the original library stays outside
 the film and is never moved or copied.
 
 For collaboration, `movielily snapshot` stages only the portable text surface:
 the cut, notes, templates, grades, scripts, configuration, and folder docs.
-Raw media, exports, caches, and Bildkasten links remain outside Git. A friend
+Raw media, exports, caches, and Pictogrep links remain outside Git. A friend
 can clone the project, add their own media to the documented folders, and use
 the same sequence files. Run `movielily doctor` before the first push; it warns
 if an older project already has media tracked by Git.
@@ -194,10 +194,10 @@ simple vertical/horizontal pan, press play, then save. It writes the same
 Uploads from the browser land in `storyboards/inbox/`. The board scans
 `storyboards/`, `images/`, `refs/`, `fxs/` and legacy `footage/` recursively.
 
-### Bildkasten bridge
+### Pictogrep bridge
 
-Bildkasten is optional visual research and sketching support. From inside a
-project, `movielily sketch` opens Bildkasten against `refs/visual/` and writes
+Pictogrep is optional visual research and sketching support. From inside a
+project, `movielily sketch` opens Pictogrep against `refs/visual/` and writes
 new boards to `storyboards/inbox/`. It never edits the sequence by itself:
 
 ```bash
@@ -207,8 +207,8 @@ movielily intake refs main --tag cinematic
 ```
 
 `intake boards` imports only unused boards from the inbox. `intake refs` reads
-the references linked by `bildkasten tags send <tag>` into
-`refs/visual/bildkasten/<tag>/`. Bildkasten's source/tags/query sidecar becomes
+the references linked by `pictogrep tags send <tag>` into
+`refs/visual/pictogrep/<tag>/`. Pictogrep's source/tags/query sidecar becomes
 the initial image note where available; the resulting cut remains plain text.
 
 ### Printable storyboard book

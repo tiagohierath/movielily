@@ -13,8 +13,8 @@ import (
 func newSketchCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "sketch",
-		Short: "Open Bildkasten storyboard mode for this project",
-		Long: "sketch starts Bildkasten storyboard mode against refs/visual/ and writes\n" +
+		Short: "Open Pictogrep storyboard mode for this project",
+		Long: "sketch starts Pictogrep storyboard mode against refs/visual/ and writes\n" +
 			"new drawings to storyboards/inbox/. It does not change any sequence; run\n" +
 			"movielily intake boards <sequence> when the boards are ready to edit.",
 		Args: cobra.NoArgs,
@@ -23,11 +23,11 @@ func newSketchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			binary := os.Getenv("MOVIELILY_BILDKASTEN")
+			binary := os.Getenv("MOVIELILY_PICTOGREP")
 			if binary == "" {
-				binary, err = exec.LookPath("bildkasten")
+				binary, err = exec.LookPath("pictogrep")
 				if err != nil {
-					return fmt.Errorf("bildkasten not found (install it or set MOVIELILY_BILDKASTEN)")
+					return fmt.Errorf("pictogrep not found (install it or set MOVIELILY_PICTOGREP)")
 				}
 			}
 			child := exec.Command(binary, "storyboard", "--project")
@@ -36,7 +36,7 @@ func newSketchCmd() *cobra.Command {
 			if err := child.Start(); err != nil {
 				return err
 			}
-			fmt.Println("Bildkasten opened; when done, run: movielily intake boards main")
+			fmt.Println("Pictogrep opened; when done, run: movielily intake boards main")
 			return nil
 		},
 	}
