@@ -282,7 +282,7 @@ func (e *editor) commitOvlSpec() {
 	e.status = fmt.Sprintf("overlay %s riding the scene above (+%ss for %ss @ %s) · w to save", it.File, trimf(at), trimf(dur), place)
 }
 
-// youtubeOp posts the last render to YouTube by re-invoking movielily's own
+// youtubeOp queues the last render for YouTube by re-invoking movielily's own
 // `youtube` subcommand (the TUI can't import the cli package). It runs with
 // the terminal handed over, so the uploader's OAuth prompt and progress show.
 func (e *editor) youtubeOp(st *xterm.State) {
@@ -291,7 +291,7 @@ func (e *editor) youtubeOp(st *xterm.State) {
 		exe = "movielily"
 	}
 	e.suspend(st)
-	fmt.Println("posting the last render to YouTube…")
+	fmt.Println("queueing the last render for YouTube…")
 	cmd := exec.Command(exe, "youtube")
 	cmd.Dir = e.p.Root
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
@@ -300,7 +300,7 @@ func (e *editor) youtubeOp(st *xterm.State) {
 	if runErr != nil {
 		e.status = "youtube: " + runErr.Error()
 	} else {
-		e.status = "posted the last render to YouTube (private)"
+		e.status = "queued the last render for YouTube"
 	}
 	e.redraw(true)
 	e.onSceneChange()

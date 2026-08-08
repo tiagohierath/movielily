@@ -49,7 +49,7 @@ fetched ephemerally when missing.
 | `movielily storyboard <seq> <out.typ|out.pdf> [--aspect 4:3|16:9]` | printable Typst/PDF storyboard book |
 | `movielily chapters <seq>` | YouTube chapters from your sections, ready for the description |
 | `movielily frame <clip> <t> <out.png>` | full-resolution frame grab (thumbnails) |
-| `movielily youtube [video] [--title T]` | post the last render (or a given file) to YouTube, private, via your uploader script |
+| `movielily youtube [video] [--title T]` | queue the last render (or a given file) for YouTube via your uploader script |
 | `movielily snapshot [message]` | commit the instructions to git (creates the repo on first use) |
 | `movielily snapshot list` · `snapshot restore <id>` | see versions · roll back (safely: it snapshots first) |
 | `movielily doctor [--fix]` | check/repair project folders, `.gitignore`, sequences and git readiness |
@@ -393,13 +393,15 @@ full-resolution still for the thumbnail.
 
 ## Posting to YouTube
 
-`movielily youtube` uploads the last render as a PRIVATE video (set title and
-thumbnail in YouTube Studio, publish when ready). It reuses the existing
+`movielily youtube` queues the last render in the shared YouTube pipeline. The
+navylily timer posts it privately on the cadence you selected; use
+`movielily youtube --now` only for an immediate private upload. It reuses the existing
 `navylily-tools/youtube_upload.sh` uploader (override the path with
 `MOVIELILY_YOUTUBE`); the first run does the Google OAuth flow in a browser.
 The `youtube` entry in the TUI command palette (`:`) does the same. Uploads
-track their own state under the project's `.cache/`, separate from the
-navylily daily timer.
+join the shared navylily queue and state, so the selected cadence applies to
+both Movielily renders and other queued videos. Override the destination queue
+with `MOVIELILY_YOUTUBE_QUEUE` if needed.
 
 ## Snapshots and versions (git)
 
