@@ -2,6 +2,7 @@ package cli
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -69,6 +70,31 @@ func youtubeQueueDir(script string) string {
 		return q
 	}
 	return filepath.Join(filepath.Dir(script), "videos", "output")
+}
+
+func currentYouTubeCadence() string {
+	stateDir := strings.TrimSpace(os.Getenv("YT_STATE_DIR"))
+	if stateDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "daily"
+		}
+		stateDir = filepath.Join(home, ".local", "state", "navylily-youtube")
+	}
+	data, err := os.ReadFile(filepath.Join(stateDir, "state.json"))
+	if err != nil {
+		return "daily"
+	}
+	var state struct {
+		Cadence string `json:"cadence"`
+	}
+	if json.Unmarshal(data, &state) != nil {
+		return "daily"
+	}
+	if state.Cadence == "weekly" || state.Cadence == "monthly" || state.Cadence == "daily" {
+		return state.Cadence
+	}
+	return "daily"
 }
 
 func contentHash(path string) (string, error) {
@@ -243,6 +269,7 @@ func newYoutubeCmd() *cobra.Command {
 			}
 			var path string
 			if now {
+				fmt.Println("warning: --now bypasses the shared posting cadence")
 				path, err = PostLastRender(p, file, title)
 			} else {
 				path, err = QueueLastRender(p, file, title)
@@ -253,7 +280,17 @@ func newYoutubeCmd() *cobra.Command {
 			if now {
 				fmt.Printf("posted %s to YouTube (private)\n", filepath.Base(path))
 			} else {
-				fmt.Printf("queued %s for YouTube\n", filepath.Base(path))
+				displayTitle := title
+				if displayTitle == "" {
+					sidecar := strings.TrimSuffix(path, filepath.Ext(path)) + ".title.txt"
+					if data, readErr := os.ReadFile(sidecar); readErr == nil {
+						displayTitle = strings.TrimSpace(string(data))
+					}
+				}
+				if displayTitle == "" {
+					displayTitle = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+				}
+				fmt.Printf("Queued for YouTube\n  title: %s\n  cadence: %s\n  next: nl-queue\n  after upload: set the thumbnail in YouTube Studio\n", displayTitle, currentYouTubeCadence())
 			}
 			return nil
 		},

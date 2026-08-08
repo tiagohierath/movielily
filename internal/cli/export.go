@@ -39,6 +39,7 @@ func newExportCmd() *cobra.Command {
 			// TUI palette) can post it without repeating the path.
 			if !draft {
 				recordLastRender(p, args[1])
+				fmt.Println("next: movielily youtube --title \"Your video title\"")
 			}
 			// In a versioned project every render becomes a findable version:
 			// the snapshot ties the published file to the exact cut behind it.
