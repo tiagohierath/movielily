@@ -113,6 +113,9 @@ func Watch(p *project.Project, clip string) error {
 		select {
 		case <-done:
 			fmt.Printf("done — %d marker(s), %d select(s) added\n", markers, selects)
+			if markers > 0 && model.IsAudioFile(stored) {
+				fmt.Printf("next: movielily essay <sequence> %s\n", stored)
+			}
 			return nil
 		case ev := <-client.Events():
 			if ev.Event != "client-message" || len(ev.Args) == 0 {

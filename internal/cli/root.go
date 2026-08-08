@@ -33,6 +33,7 @@ func newRootCmd() *cobra.Command {
 		newEditCmd(),
 		newReviewCmd(),
 		newExportCmd(),
+		newEssayCmd(),
 		newStoryboardCmd(),
 		newSilencesCmd(),
 		newGradeCmd(),

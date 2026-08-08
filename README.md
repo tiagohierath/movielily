@@ -37,6 +37,7 @@ fetched ephemerally when missing.
 | `movielily seq overlay <seq> <img|tpl.typ> <at> <dur> [--place br:33] [note]` | image, or a typst template whose text is the note (lower-thirds), on top of the LAST scene |
 | `movielily seq use <seq> <other>` | splice another sequence in (chapters edited separately) |
 | `movielily silences <audio> [--keep]` | find the spoken stretches of a narration take; --keep turns them into selects |
+| `movielily essay <sequence> <narration>` | turn watch-marker timestamps into a simple image-over-narration essay |
 | `movielily grade params/list/show/set` | manage colour-grade / film-grain presets (grades/*.grade) |
 | `movielily seq audio <seq> <file> [--gain -12] [note]` | music/narration bed under the whole cut |
 | `movielily seq show <seq>` · `seq list` | inspect sequences |
@@ -101,6 +102,24 @@ Clips whose file has no audio stream at all (some screen captures) export
 with silence automatically instead of failing.
 
 ## Workflows
+
+### The simplest image essay
+
+```bash
+# 1. Listen once. Press m each time the picture should change.
+movielily watch audio/dialogue/essay.wav
+
+# 2. For every timestamp, type the image to show (Enter skips a cue).
+movielily essay essay audio/dialogue/essay.wav
+
+# 3. Check it, render it, and queue it for YouTube.
+movielily edit essay
+movielily export essay exports/video/essay.mp4
+movielily youtube --title "My video essay"
+```
+
+Put images in `images/stills/` first. `essay` keeps the narration continuous
+and makes each chosen image full-screen until the next marker.
 
 ### Project layout
 
