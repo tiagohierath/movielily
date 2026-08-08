@@ -11,9 +11,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"movielily/internal/model"
-	"movielily/internal/project"
-	"movielily/internal/store"
+	"milklily/internal/model"
+	"milklily/internal/project"
+	"milklily/internal/store"
 )
 
 type pictogrepMeta struct {
@@ -108,7 +108,7 @@ func intakeImages(p *project.Project, sequence, root string, frames int) (int, e
 	if added == 0 {
 		return 0, nil
 	}
-	lines := []string{"# " + strings.TrimSuffix(filepath.Base(sequence), ".txt") + " - edited with movielily"}
+	lines := []string{"# " + strings.TrimSuffix(filepath.Base(sequence), ".txt") + " - edited with milklily"}
 	for _, item := range items {
 		lines = append(lines, item.String())
 	}

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"movielily/internal/model"
-	"movielily/internal/project"
-	"movielily/internal/store"
+	"milklily/internal/model"
+	"milklily/internal/project"
+	"milklily/internal/store"
 )
 
 func TestIntakeImagesUsesPictogrepSidecarAndSkipsDuplicates(t *testing.T) {

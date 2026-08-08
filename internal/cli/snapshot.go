@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"movielily/internal/project"
+	"milklily/internal/project"
 )
 
 // Snapshots are optional git integration: the project's plain-text
@@ -28,7 +28,7 @@ func newSnapshotCmd() *cobra.Command {
 			"selects, notes, sequences) to a git repository at the project root, creating\n" +
 			"it on first use. Media folders and exports are ignored; only the small\n" +
 			"text instruction files are versioned. Entirely optional: nothing else in\n" +
-			"movielily needs git.",
+			"milklily needs git.",
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return takeSnapshot(joinArgs(args))
@@ -49,7 +49,7 @@ func newSnapshotListCmd() *cobra.Command {
 				return err
 			}
 			if !hasSnapshotRepo(p.Root) {
-				fmt.Println("no snapshots yet (take one with 'movielily snapshot')")
+				fmt.Println("no snapshots yet (take one with 'milklily snapshot')")
 				return nil
 			}
 			out, err := git(p.Root, "log", "--pretty=format:%h  %ad  %s", "--date=format:%Y-%m-%d %H:%M")
@@ -76,11 +76,11 @@ func newSnapshotRestoreCmd() *cobra.Command {
 				return err
 			}
 			if !hasSnapshotRepo(p.Root) {
-				return fmt.Errorf("no snapshots yet (take one with 'movielily snapshot')")
+				return fmt.Errorf("no snapshots yet (take one with 'milklily snapshot')")
 			}
 			ref := args[0]
 			if _, err := git(p.Root, "rev-parse", "--verify", ref+"^{commit}"); err != nil {
-				return fmt.Errorf("no such snapshot: %s (see 'movielily snapshot list')", ref)
+				return fmt.Errorf("no such snapshot: %s (see 'milklily snapshot list')", ref)
 			}
 			// Safety net: the state being replaced becomes a snapshot itself.
 			if err := takeSnapshot("before restoring " + ref); err != nil {
@@ -183,7 +183,7 @@ func initSnapshotRepo(root string) error {
 func commitArgs(root string, message string) []string {
 	args := []string{}
 	if email, _ := git(root, "config", "user.email"); email == "" {
-		args = append(args, "-c", "user.name=movielily", "-c", "user.email=movielily@localhost")
+		args = append(args, "-c", "user.name=milklily", "-c", "user.email=milklily@localhost")
 	}
 	return append(args, "commit", "--quiet", "-m", message)
 }

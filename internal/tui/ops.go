@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"movielily/internal/grade"
-	"movielily/internal/model"
-	"movielily/internal/mpv"
+	"milklily/internal/grade"
+	"milklily/internal/model"
+	"milklily/internal/mpv"
 )
 
 // ---- operations -----------------------------------------------------------

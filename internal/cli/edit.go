@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"movielily/internal/project"
-	"movielily/internal/tui"
+	"milklily/internal/project"
+	"milklily/internal/tui"
 )
 
 func newEditCmd() *cobra.Command {
@@ -61,6 +61,6 @@ func soleSequence(p *project.Project) (string, error) {
 	case 1:
 		return seqs[0], nil
 	default:
-		return "", fmt.Errorf("multiple sequences (%s) — name one: movielily edit <name>", strings.Join(seqs, ", "))
+		return "", fmt.Errorf("multiple sequences (%s) — name one: milklily edit <name>", strings.Join(seqs, ", "))
 	}
 }

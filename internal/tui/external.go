@@ -3,11 +3,11 @@ package tui
 import (
 	"fmt"
 	"io"
-	"movielily/internal/manim"
-	"movielily/internal/model"
-	"movielily/internal/mpv"
-	"movielily/internal/store"
-	"movielily/internal/typst"
+	"milklily/internal/manim"
+	"milklily/internal/model"
+	"milklily/internal/mpv"
+	"milklily/internal/store"
+	"milklily/internal/typst"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -149,7 +149,7 @@ func (e *editor) reselect() {
 		fail("sections have no footage to open")
 		return
 	case it.Kind == model.KindUse:
-		fail("this splices sequence " + strings.TrimSuffix(it.File, ".txt") + " here (edit it with: movielily edit " + strings.TrimSuffix(it.File, ".txt") + ")")
+		fail("this splices sequence " + strings.TrimSuffix(it.File, ".txt") + " here (edit it with: milklily edit " + strings.TrimSuffix(it.File, ".txt") + ")")
 		return
 	case it.Kind == model.KindImage || it.Kind == model.KindOverlay:
 		if abs, err := e.p.ResolveFootage(it.File); err != nil {
@@ -232,11 +232,11 @@ func (e *editor) applyReselect(r reselectRes) {
 	e.out.Flush()
 }
 
-// vimCommand is the editor to launch. It honours $MOVIELILY_EDITOR for an
+// vimCommand is the editor to launch. It honours $MILKLILY_EDITOR for an
 // override (so flags work, e.g. "vim -u NONE"), but defaults to plain vim
 // rather than $EDITOR so the format opens in vim, not neovim or anything else.
 func vimCommand() []string {
-	if v := strings.TrimSpace(os.Getenv("MOVIELILY_EDITOR")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("MILKLILY_EDITOR")); v != "" {
 		if fields := strings.Fields(v); len(fields) > 0 {
 			return fields
 		}

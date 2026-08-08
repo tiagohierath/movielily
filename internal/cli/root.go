@@ -1,4 +1,4 @@
-// Package cli wires movielily's commands together with cobra.
+// Package cli wires milklily's commands together with cobra.
 package cli
 
 import (
@@ -10,9 +10,9 @@ import (
 
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
-		Use:   "movielily",
+		Use:   "milklily",
 		Short: "A minimal short-film editor: browser boards, terminal timing, text EDLs",
-		Long: "movielily is a small short-film system around plain-text EDLs: sort\n" +
+		Long: "milklily is a small short-film system around plain-text EDLs: sort\n" +
 			"storyboards in the browser, refine timing/audio in the terminal, review\n" +
 			"instantly, and export with ffmpeg.",
 		SilenceUsage:  true,

@@ -1,6 +1,6 @@
 # Colour grading & film grain
 
-movielily grades footage the way it does everything else: as **plain text,
+milklily grades footage the way it does everything else: as **plain text,
 applied only at export, never touching the source**. A grade is a set of
 friendly `key=value` parameters. That makes it fully reversible (delete the
 text), reproducible (same text, same pixels), diffable, and git-versionable.
@@ -28,7 +28,7 @@ numbers; the ffmpeg filters are generated, never typed.
 | `vignette` | 0 … 100 | 0 | darken toward the corners |
 | `fade` (alias `lift`) | 0 … 100 | 0 | lift blacks to grey (matte look) |
 
-Run `movielily grade params` for this list at any time. Common short aliases
+Run `milklily grade params` for this list at any time. Common short aliases
 work too (`sat`, `temp`, `hi`, `sh`, `vig`, `bp`, `wp`, `noise` = grain).
 
 Under the hood these compile to one ffmpeg chain: `eq` (exposure/contrast/
@@ -52,7 +52,7 @@ video|sunset.mp4|10|18|golden hour saturation=120 warmth=25 grain=20
 to apply it; inline tokens on the same scene override the preset:
 
 ```bash
-movielily grade set filmic saturation=115 contrast=108 warmth=15 grain=20
+milklily grade set filmic saturation=115 contrast=108 warmth=15 grain=20
 # then, on a scene's note:  moody shot #grade:filmic grain=40
 ```
 
@@ -60,7 +60,7 @@ movielily grade set filmic saturation=115 contrast=108 warmth=15 grain=20
 
 ## Two ways to edit — text or TUI
 
-The **TUI grade panel** (`c` on a scene in `movielily edit`, or `:grade`) is a
+The **TUI grade panel** (`c` on a scene in `milklily edit`, or `:grade`) is a
 live slider view of the same parameters: `j`/`k` pick a parameter, `←`/`→`
 (or `h`/`l`) adjust it, `0` resets one, `r` clears the whole grade. The panel
 shows the exact `key=value` text at the bottom as you go — the panel and the

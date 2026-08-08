@@ -1,4 +1,4 @@
-// Package store reads and writes movielily's plain-text files. Reads ignore
+// Package store reads and writes milklily's plain-text files. Reads ignore
 // blank lines and #-comment lines so the files stay friendly to cat/grep/sed
 // and hand-editing. Replacing a file is atomic (temp + rename).
 package store

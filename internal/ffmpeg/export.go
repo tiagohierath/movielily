@@ -11,12 +11,12 @@ import (
 	"strconv"
 	"strings"
 
-	"movielily/internal/grade"
-	"movielily/internal/manim"
-	"movielily/internal/model"
-	"movielily/internal/project"
-	"movielily/internal/timeline"
-	"movielily/internal/typst"
+	"milklily/internal/grade"
+	"milklily/internal/manim"
+	"milklily/internal/model"
+	"milklily/internal/project"
+	"milklily/internal/timeline"
+	"milklily/internal/typst"
 )
 
 // Export renders items to out using ffmpeg. Video clips are assumed to carry
@@ -72,7 +72,7 @@ func Export(p *project.Project, items []model.SequenceItem, out string, draft bo
 			if !ok {
 				name = filepath.Base(dirAbs)
 			}
-			return fmt.Errorf("refusing to export into %s/ — movielily never modifies source media", name)
+			return fmt.Errorf("refusing to export into %s/ — milklily never modifies source media", name)
 		}
 	}
 

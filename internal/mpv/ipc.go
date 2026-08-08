@@ -1,5 +1,5 @@
 // Package mpv drives mpv for live logging (JSON IPC) and sequence review
-// (mpv EDL). movielily never decodes or renders video itself.
+// (mpv EDL). milklily never decodes or renders video itself.
 package mpv
 
 import (

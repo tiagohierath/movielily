@@ -5,10 +5,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"movielily/internal/ffmpeg"
-	"movielily/internal/model"
-	"movielily/internal/project"
-	"movielily/internal/store"
+	"milklily/internal/ffmpeg"
+	"milklily/internal/model"
+	"milklily/internal/project"
+	"milklily/internal/store"
 )
 
 // newSilencesCmd proposes selects from a continuous narration recording: the
@@ -88,7 +88,7 @@ func newSilencesCmd() *cobra.Command {
 				if skipped > 0 {
 					fmt.Printf(" · skipped %d already present", skipped)
 				}
-				fmt.Println(" · source audio unchanged · next: movielily seq from-selects <name>")
+				fmt.Println(" · source audio unchanged · next: milklily seq from-selects <name>")
 			} else {
 				fmt.Println("nothing written · re-run with --keep to append these to selects.txt")
 			}

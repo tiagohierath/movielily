@@ -12,17 +12,17 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"movielily/internal/project"
+	"milklily/internal/project"
 )
 
 // The uploader is Tiago's existing script (navylily-tools/youtube_upload.sh):
 // it uploads one video from YT_OUTPUT_DIR as PRIVATE, reading a
-// "<name>.title.txt" sidecar for the title. movielily reuses it rather than
+// "<name>.title.txt" sidecar for the title. milklily reuses it rather than
 // reimplementing OAuth, so posting a render is: stage the file into its own
 // dir with a title sidecar, point the script at it, run it.
 
 func youtubeScript() string {
-	if s := strings.TrimSpace(os.Getenv("MOVIELILY_YOUTUBE")); s != "" {
+	if s := strings.TrimSpace(os.Getenv("MILKLILY_YOUTUBE")); s != "" {
 		return s
 	}
 	return filepath.Join(os.Getenv("HOME"), "projects", "navylily-tools", "youtube_upload.sh")
@@ -47,7 +47,7 @@ func resolveRender(p *project.Project, file string) (string, error) {
 	if file == "" {
 		data, err := os.ReadFile(lastRenderFile(p))
 		if err != nil {
-			return "", fmt.Errorf("no render recorded yet (run 'movielily export' first)")
+			return "", fmt.Errorf("no render recorded yet (run 'milklily export' first)")
 		}
 		file = strings.TrimSpace(string(data))
 	}
@@ -66,7 +66,7 @@ func resolveRender(p *project.Project, file string) (string, error) {
 }
 
 func youtubeQueueDir(script string) string {
-	if q := strings.TrimSpace(os.Getenv("MOVIELILY_YOUTUBE_QUEUE")); q != "" {
+	if q := strings.TrimSpace(os.Getenv("MILKLILY_YOUTUBE_QUEUE")); q != "" {
 		return q
 	}
 	return filepath.Join(filepath.Dir(script), "videos", "output")
@@ -111,7 +111,7 @@ func contentHash(path string) (string, error) {
 }
 
 func writeSidecar(path, title string) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".movielily-title-")
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".milklily-title-")
 	if err != nil {
 		return err
 	}
@@ -137,7 +137,7 @@ func QueueLastRender(p *project.Project, file, title string) (string, error) {
 	}
 	script := youtubeScript()
 	if _, err := os.Stat(script); err != nil {
-		return "", fmt.Errorf("uploader not found at %s (set MOVIELILY_YOUTUBE to your youtube_upload.sh)", script)
+		return "", fmt.Errorf("uploader not found at %s (set MILKLILY_YOUTUBE to your youtube_upload.sh)", script)
 	}
 	queue := youtubeQueueDir(script)
 	if err := os.MkdirAll(queue, 0o755); err != nil {
@@ -172,7 +172,7 @@ func QueueLastRender(p *project.Project, file, title string) (string, error) {
 	}
 	// Different filesystems cannot hard-link. Copy to a temp file, then link it
 	// into place atomically so a concurrent queue action cannot overwrite it.
-	tmp, err := os.CreateTemp(queue, ".movielily-video-")
+	tmp, err := os.CreateTemp(queue, ".milklily-video-")
 	if err != nil {
 		return "", err
 	}
@@ -212,12 +212,12 @@ func PostLastRender(p *project.Project, file, title string) (string, error) {
 	}
 	script := youtubeScript()
 	if _, err := os.Stat(script); err != nil {
-		return "", fmt.Errorf("uploader not found at %s (set MOVIELILY_YOUTUBE to your youtube_upload.sh)", script)
+		return "", fmt.Errorf("uploader not found at %s (set MILKLILY_YOUTUBE to your youtube_upload.sh)", script)
 	}
 
 	// Stage the one file in its own dir so the uploader can't pick a different
 	// video, with the title sidecar the script reads.
-	stage, err := os.MkdirTemp("", "movielily-yt-")
+	stage, err := os.MkdirTemp("", "milklily-yt-")
 	if err != nil {
 		return "", err
 	}
@@ -238,7 +238,7 @@ func PostLastRender(p *project.Project, file, title string) (string, error) {
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	cmd.Env = append(os.Environ(),
 		"YT_OUTPUT_DIR="+stage,
-		// Project-local state so movielily's uploads don't share (or trip) the
+		// Project-local state so milklily's uploads don't share (or trip) the
 		// navylily daily-timer's cooldown, and on-demand posting isn't blocked.
 		"YT_STATE_DIR="+filepath.Join(p.Root, ".cache", "youtube"),
 		"YT_MIN_HOURS_BETWEEN=0",
@@ -255,7 +255,7 @@ func newYoutubeCmd() *cobra.Command {
 		Long: "youtube queues the given file, or the last export if none is given, for\n" +
 			"the shared YouTube uploader. It posts on the cadence you selected there.\n" +
 			"Pass --now only to upload immediately as a private video.\n" +
-			"(navylily-tools/youtube_upload.sh; override with MOVIELILY_YOUTUBE). The\n" +
+			"(navylily-tools/youtube_upload.sh; override with MILKLILY_YOUTUBE). The\n" +
 			"first run opens the Google OAuth flow in a browser.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -62,7 +62,7 @@ func TestEnsureStructureDoesNotOverwriteUserFiles(t *testing.T) {
 	}
 }
 
-func TestEnsureGitignoreAppendsMovielilyBlockOnce(t *testing.T) {
+func TestEnsureGitignoreAppendsMilklilyBlockOnce(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".gitignore")
 	if err := os.WriteFile(path, []byte("local.tmp\n"), 0o644); err != nil {
@@ -82,8 +82,8 @@ func TestEnsureGitignoreAppendsMovielilyBlockOnce(t *testing.T) {
 	if body[:10] != "local.tmp\n" {
 		t.Fatalf("existing ignore content not preserved: %q", body)
 	}
-	if n := countOccurrences(body, "# >>> movielily"); n != 1 {
-		t.Fatalf("movielily ignore block count = %d, want 1:\n%s", n, body)
+	if n := countOccurrences(body, "# >>> milklily"); n != 1 {
+		t.Fatalf("milklily ignore block count = %d, want 1:\n%s", n, body)
 	}
 	for _, want := range []string{
 		"/storyboards/**",

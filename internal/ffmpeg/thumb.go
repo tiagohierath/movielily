@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strconv"
 
-	"movielily/internal/model"
+	"milklily/internal/model"
 )
 
 // Thumbnail extracts a single frame from src at time `at` (seconds) and writes

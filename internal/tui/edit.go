@@ -1,10 +1,10 @@
-// Package tui implements movielily's interactive editor: a "more visible"
+// Package tui implements milklily's interactive editor: a "more visible"
 // view of a sequence (the edit-decision list). It is a hand-rolled terminal UI
 // — no heavy framework — so it can place kitty-graphics image previews precisely
 // without a render loop fighting over the screen.
 //
 // The editor only ever rewrites the sequence's plain-text file; footage is read
-// (for frame previews) but never touched, keeping movielily's invariant.
+// (for frame previews) but never touched, keeping milklily's invariant.
 package tui
 
 import (
@@ -21,9 +21,9 @@ import (
 
 	xterm "golang.org/x/term"
 
-	"movielily/internal/model"
-	"movielily/internal/project"
-	"movielily/internal/store"
+	"milklily/internal/model"
+	"milklily/internal/project"
+	"milklily/internal/store"
 )
 
 const (
@@ -157,7 +157,7 @@ type editor struct {
 // is seeded from the project's selects so there is something to look at.
 func Edit(p *project.Project, name string) error {
 	if !xterm.IsTerminal(int(os.Stdin.Fd())) || !xterm.IsTerminal(int(os.Stdout.Fd())) {
-		return fmt.Errorf("movielily edit needs an interactive terminal")
+		return fmt.Errorf("milklily edit needs an interactive terminal")
 	}
 
 	path := p.Sequence(name)
@@ -175,7 +175,7 @@ func Edit(p *project.Project, name string) error {
 		}
 	}
 
-	tmp, err := os.MkdirTemp("", "movielily-edit-")
+	tmp, err := os.MkdirTemp("", "milklily-edit-")
 	if err != nil {
 		return err
 	}

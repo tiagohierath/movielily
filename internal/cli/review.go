@@ -7,10 +7,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"movielily/internal/model"
-	"movielily/internal/mpv"
-	"movielily/internal/project"
-	"movielily/internal/store"
+	"milklily/internal/model"
+	"milklily/internal/mpv"
+	"milklily/internal/project"
+	"milklily/internal/store"
 )
 
 func newReviewCmd() *cobra.Command {

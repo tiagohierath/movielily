@@ -3,8 +3,8 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
-	"movielily/internal/mpv"
-	"movielily/internal/project"
+	"milklily/internal/mpv"
+	"milklily/internal/project"
 )
 
 func newWatchCmd() *cobra.Command {

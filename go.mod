@@ -1,4 +1,4 @@
-module movielily
+module milklily
 
 go 1.25.0
 

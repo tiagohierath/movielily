@@ -5,9 +5,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"movielily/internal/model"
-	"movielily/internal/project"
-	"movielily/internal/store"
+	"milklily/internal/model"
+	"milklily/internal/project"
+	"milklily/internal/store"
 )
 
 func newMarkerCmd() *cobra.Command {

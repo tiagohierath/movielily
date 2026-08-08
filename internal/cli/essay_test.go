@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"movielily/internal/model"
+	"milklily/internal/model"
 )
 
 func TestEssayLinesBuildsNarrationAndTimedImages(t *testing.T) {

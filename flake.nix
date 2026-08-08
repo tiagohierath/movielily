@@ -1,5 +1,5 @@
 {
-  description = "movielily - a minimal, notebook-style video editor (mpv + ffmpeg)";
+  description = "milklily - a minimal, notebook-style video editor (mpv + ffmpeg)";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -27,7 +27,7 @@
             git
           ];
           shellHook = ''
-            echo "movielily dev shell — $(go version | awk '{print $1, $3}'), mpv, ffmpeg"
+            echo "milklily dev shell — $(go version | awk '{print $1, $3}'), mpv, ffmpeg"
           '';
         };
       });
@@ -35,7 +35,7 @@
       # `nix build` / `nix run .` — builds the CLI with mpv + ffmpeg on PATH.
       packages = forAllSystems (system: pkgs: {
         default = pkgs.buildGoModule {
-          pname = "movielily";
+          pname = "milklily";
           version = "0.1.0";
           src = ./.;
           # Deps are vendored (see vendor/), so no hash needed and the build
@@ -43,12 +43,12 @@
           vendorHash = null;
           nativeBuildInputs = [ pkgs.makeWrapper ];
           postInstall = ''
-            wrapProgram $out/bin/movielily \
+            wrapProgram $out/bin/milklily \
               --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.mpv pkgs.ffmpeg ]}
           '';
           meta = {
             description = "Minimal, notebook-style video editor (mpv + ffmpeg)";
-            mainProgram = "movielily";
+            mainProgram = "milklily";
           };
         };
       });
@@ -56,7 +56,7 @@
       apps = forAllSystems (system: pkgs: {
         default = {
           type = "app";
-          program = "${self.packages.${system}.default}/bin/movielily";
+          program = "${self.packages.${system}.default}/bin/milklily";
         };
       });
     };

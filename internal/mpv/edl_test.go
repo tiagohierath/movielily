@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"movielily/internal/model"
-	"movielily/internal/project"
+	"milklily/internal/model"
+	"milklily/internal/project"
 )
 
 // testProject builds a throwaway project whose footage/ holds empty files with

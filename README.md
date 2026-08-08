@@ -1,6 +1,6 @@
-# movielily
+# milklily
 
-movielily is a notebook-style short-film editor: sort storyboard images in the
+milklily is a notebook-style short-film editor: sort storyboard images in the
 browser, time and refine the cut in a terminal UI, watch it instantly without
 rendering, and export a YouTube-ready 4:3 file with ffmpeg.
 
@@ -22,39 +22,39 @@ fetched ephemerally when missing.
 
 | command | what it does |
 |---|---|
-| `movielily init [dir] [--git] [--footage <src>]` | create a GitHub-friendly short-film project |
-| `movielily watch <clip>` | play in mpv and log: `m` marker, `i`/`o` in/out, `Enter` select (works on audio files too) |
-| `movielily marker add <clip> <t> [note]` · `marker list` | markers by hand |
-| `movielily select add <clip> <in> <out> [note]` · `select list` | selects by hand |
-| `movielily note add [--clip c] [--time t] <text>` · `note list` | free notes, timestamped if you want |
-| `movielily search <term>` | search markers, selects and notes |
-| `movielily tag [name]` | list #tags, or everything tagged #name |
-| `movielily seq from-selects <seq> [--force]` | seed a sequence from all selects |
-| `movielily seq video <seq> <file> <in> <out> [note]` | append a clip (or a slice of a voice recording) |
-| `movielily seq image <seq> <img> <dur> [note]` | append a still (`#cover` fills; `#pan_rl` etc. pans) |
-| `movielily seq title <seq> <template> <dur> <text>` | append a typst title card |
-| `movielily seq anim <seq> <template> <text>` | append a manim animated card (renders now, measures length) |
-| `movielily seq overlay <seq> <img|tpl.typ> <at> <dur> [--place br:33] [note]` | image, or a typst template whose text is the note (lower-thirds), on top of the LAST scene |
-| `movielily seq use <seq> <other>` | splice another sequence in (chapters edited separately) |
-| `movielily silences <audio> [--keep]` | find the spoken stretches of a narration take; --keep turns them into selects |
-| `movielily essay <sequence> <narration>` | turn watch-marker timestamps into a simple image-over-narration essay |
-| `movielily grade params/list/show/set` | manage colour-grade / film-grain presets (grades/*.grade) |
-| `movielily seq audio <seq> <file> [--gain -12] [note]` | music/narration bed under the whole cut |
-| `movielily seq show <seq>` · `seq list` | inspect sequences |
-| `movielily board <seq>` | browser light table for image storyboards: add local images, sort, time, pan, preview, save EDL |
-| `movielily intake <boards|refs> <seq>` | explicitly append unused Pictogrep boards or tagged references to a cut |
-| `movielily sketch` | open Pictogrep storyboard mode for the current project |
-| `movielily edit [seq]` | the interactive editor (see keys below) |
-| `movielily review <seq> [--from N]` | watch the cut in mpv, simulated export, no render |
-| `movielily export <seq> <out.mp4> [--draft]` | render the real file (auto-snapshots; --draft = half-res quick look) |
-| `movielily storyboard <seq> <out.typ|out.pdf> [--aspect 4:3|16:9]` | printable Typst/PDF storyboard book |
-| `movielily chapters <seq>` | YouTube chapters from your sections, ready for the description |
-| `movielily frame <clip> <t> <out.png>` | full-resolution frame grab (thumbnails) |
-| `movielily youtube [video] [--title T]` | queue the last render (or a given file) for YouTube via your uploader script |
-| `movielily snapshot [message]` | commit the instructions to git (creates the repo on first use) |
-| `movielily snapshot list` · `snapshot restore <id>` | see versions · roll back (safely: it snapshots first) |
-| `movielily doctor [--fix]` | check/repair project folders, `.gitignore`, sequences and git readiness |
-| `movielily version` | version info |
+| `milklily init [dir] [--git] [--footage <src>]` | create a GitHub-friendly short-film project |
+| `milklily watch <clip>` | play in mpv and log: `m` marker, `i`/`o` in/out, `Enter` select (works on audio files too) |
+| `milklily marker add <clip> <t> [note]` · `marker list` | markers by hand |
+| `milklily select add <clip> <in> <out> [note]` · `select list` | selects by hand |
+| `milklily note add [--clip c] [--time t] <text>` · `note list` | free notes, timestamped if you want |
+| `milklily search <term>` | search markers, selects and notes |
+| `milklily tag [name]` | list #tags, or everything tagged #name |
+| `milklily seq from-selects <seq> [--force]` | seed a sequence from all selects |
+| `milklily seq video <seq> <file> <in> <out> [note]` | append a clip (or a slice of a voice recording) |
+| `milklily seq image <seq> <img> <dur> [note]` | append a still (`#cover` fills; `#pan_rl` etc. pans) |
+| `milklily seq title <seq> <template> <dur> <text>` | append a typst title card |
+| `milklily seq anim <seq> <template> <text>` | append a manim animated card (renders now, measures length) |
+| `milklily seq overlay <seq> <img|tpl.typ> <at> <dur> [--place br:33] [note]` | image, or a typst template whose text is the note (lower-thirds), on top of the LAST scene |
+| `milklily seq use <seq> <other>` | splice another sequence in (chapters edited separately) |
+| `milklily silences <audio> [--keep]` | find the spoken stretches of a narration take; --keep turns them into selects |
+| `milklily essay <sequence> <narration>` | turn watch-marker timestamps into a simple image-over-narration essay |
+| `milklily grade params/list/show/set` | manage colour-grade / film-grain presets (grades/*.grade) |
+| `milklily seq audio <seq> <file> [--gain -12] [note]` | music/narration bed under the whole cut |
+| `milklily seq show <seq>` · `seq list` | inspect sequences |
+| `milklily board <seq>` | browser light table for image storyboards: add local images, sort, time, pan, preview, save EDL |
+| `milklily intake <boards|refs> <seq>` | explicitly append unused Pictogrep boards or tagged references to a cut |
+| `milklily sketch` | open Pictogrep storyboard mode for the current project |
+| `milklily edit [seq]` | the interactive editor (see keys below) |
+| `milklily review <seq> [--from N]` | watch the cut in mpv, simulated export, no render |
+| `milklily export <seq> <out.mp4> [--draft]` | render the real file (auto-snapshots; --draft = half-res quick look) |
+| `milklily storyboard <seq> <out.typ|out.pdf> [--aspect 4:3|16:9]` | printable Typst/PDF storyboard book |
+| `milklily chapters <seq>` | YouTube chapters from your sections, ready for the description |
+| `milklily frame <clip> <t> <out.png>` | full-resolution frame grab (thumbnails) |
+| `milklily youtube [video] [--title T]` | queue the last render (or a given file) for YouTube via your uploader script |
+| `milklily snapshot [message]` | commit the instructions to git (creates the repo on first use) |
+| `milklily snapshot list` · `snapshot restore <id>` | see versions · roll back (safely: it snapshots first) |
+| `milklily doctor [--fix]` | check/repair project folders, `.gitignore`, sequences and git readiness |
+| `milklily version` | version info |
 
 Aliases: `m`=marker, `sel`=select, `n`=note, `s`=seq, `snap`=snapshot.
 
@@ -107,22 +107,22 @@ with silence automatically instead of failing.
 
 ```bash
 # 1. Listen once. Press m each time the picture should change.
-movielily watch audio/dialogue/essay.wav
+milklily watch audio/dialogue/essay.wav
 
 # 2. For every timestamp, type the image to show (Enter skips a cue).
-movielily essay essay audio/dialogue/essay.wav
+milklily essay essay audio/dialogue/essay.wav
 
 # 3. Check it, render it, and queue it for YouTube.
-movielily edit essay
-movielily export essay exports/video/essay.mp4
-movielily youtube --title "My video essay"
+milklily edit essay
+milklily export essay exports/video/essay.mp4
+milklily youtube --title "My video essay"
 ```
 
 Put images in `images/stills/` first. `essay` keeps the narration continuous
 and makes each chosen image full-screen until the next marker.
 
 You can also open an image board while arranging images (for example,
-`movielily board images --open`). Its small audio strip plays files from
+`milklily board images --open`). Its small audio strip plays files from
 `audio/`, shows the exact timestamp, and has start, end, play/pause, and
 ±5-second controls. Clicking an image jumps the narration clock to that
 image's current start time.
@@ -130,9 +130,9 @@ image's current start time.
 ### Project layout
 
 ```bash
-movielily init my-film --git
+milklily init my-film --git
 cd my-film
-movielily board main --open
+milklily board main --open
 ```
 
 `init` creates a folder meant to stay readable in any file manager:
@@ -164,7 +164,7 @@ rules keep source media and generated exports out of git while keeping the
 text instructions trackable. For older projects, run:
 
 ```bash
-movielily doctor --fix
+milklily doctor --fix
 ```
 
 Each film is self-contained: deleting its project directory removes only that
@@ -172,17 +172,17 @@ film's instructions and local media. Pictogrep references sent into
 `refs/visual/pictogrep/` are symlinks, so the original library stays outside
 the film and is never moved or copied.
 
-For collaboration, `movielily snapshot` stages only the portable text surface:
+For collaboration, `milklily snapshot` stages only the portable text surface:
 the cut, notes, templates, grades, scripts, configuration, and folder docs.
 Raw media, exports, caches, and Pictogrep links remain outside Git. A friend
 can clone the project, add their own media to the documented folders, and use
-the same sequence files. Run `movielily doctor` before the first push; it warns
+the same sequence files. Run `milklily doctor` before the first push; it warns
 if an older project already has media tracked by Git.
 
 ### Browser board
 
 ```bash
-movielily board main --open
+milklily board main --open
 ```
 
 The browser board is a light table: unused images on the left, the ordered EDL
@@ -197,13 +197,13 @@ Uploads from the browser land in `storyboards/inbox/`. The board scans
 ### Pictogrep bridge
 
 Pictogrep is optional visual research and sketching support. From inside a
-project, `movielily sketch` opens Pictogrep against `refs/visual/` and writes
+project, `milklily sketch` opens Pictogrep against `refs/visual/` and writes
 new boards to `storyboards/inbox/`. It never edits the sequence by itself:
 
 ```bash
-movielily sketch
-movielily intake boards main
-movielily intake refs main --tag cinematic
+milklily sketch
+milklily intake boards main
+milklily intake refs main --tag cinematic
 ```
 
 `intake boards` imports only unused boards from the inbox. `intake refs` reads
@@ -214,8 +214,8 @@ the initial image note where available; the resulting cut remains plain text.
 ### Printable storyboard book
 
 ```bash
-movielily storyboard main exports/storyboard-books/main.pdf --aspect 4:3
-movielily storyboard main exports/storyboard-books/main-16x9.pdf --aspect 16:9
+milklily storyboard main exports/storyboard-books/main.pdf --aspect 4:3
+milklily storyboard main exports/storyboard-books/main-16x9.pdf --aspect 16:9
 ```
 
 This exports a Typst/PDF book: a contact-sheet grid with each doodle on one
@@ -228,14 +228,14 @@ Record your narration anywhere, pauses and retakes included, then:
 
 ```bash
 cp ~/gravacao.wav audio/dialogue/
-movielily silences audio/dialogue/gravacao.wav --keep
-movielily seq from-selects aula
-movielily edit aula                 # prune misfires (d), split (s), cards (T)
-movielily seq audio aula audio/music/trilha.mp3 --gain -14 "trilha #duck"
-movielily export aula exports/video/aula.mp4
+milklily silences audio/dialogue/gravacao.wav --keep
+milklily seq from-selects aula
+milklily edit aula                 # prune misfires (d), split (s), cards (T)
+milklily seq audio aula audio/music/trilha.mp3 --gain -14 "trilha #duck"
+milklily export aula exports/video/aula.mp4
 ```
 
-(`movielily watch gravacao.wav` is the manual alternative: listen and mark
+(`milklily watch gravacao.wav` is the manual alternative: listen and mark
 takes with i/o+Enter yourself.)
 
 A voice slice in the timeline shows a black canvas; decorate it with overlays
@@ -257,7 +257,7 @@ saves the select, `q` quits. Markers land in `markers.txt`, selects in
 ## edit: the TUI
 
 ```bash
-movielily edit filme        # or just `movielily edit` with a single sequence
+milklily edit filme        # or just `milklily edit` with a single sequence
 ```
 
 Three panes. **Left**: the cut, one scene per line, colour-coded with an icon
@@ -287,7 +287,7 @@ waveform, in kitty/Ghostty/WezTerm) with its timing and grade summary beneath.
 | `:` | command palette: fuzzy-search every command by name (`wat` finds `watch`/`watch-all`), Tab/Ctrl-n cycles, Enter runs; `bed` and `overlay` there are two-step wizards that insert those records |
 | `w` | save · `q`/`Q` quit saving/discarding · `?` help overlay |
 
-`MOVIELILY_EDITOR` overrides vim (e.g. `MOVIELILY_EDITOR="vim -u NONE"`).
+`MILKLILY_EDITOR` overrides vim (e.g. `MILKLILY_EDITOR="vim -u NONE"`).
 
 ## Title cards (typst)
 
@@ -299,7 +299,7 @@ are cached in `.cache/` by template content + text, so editing the template
 re-renders every card that uses it, and reuse costs nothing.
 
 ```bash
-movielily seq title filme chapter.typ 4 "Capítulo 2"
+milklily seq title filme chapter.typ 4 "Capítulo 2"
 cp titles/chapter.typ titles/lower.typ   # new style, edit freely
 ```
 
@@ -307,7 +307,7 @@ cp titles/chapter.typ titles/lower.typ   # new style, edit freely
 
 Same idea, animated: `.py` manim scenes in `anims/`, first use creates
 `anims/card.py` (text writes in, holds, fades out). The contract: a Scene
-subclass named `Card` that reads `$MOVIELILY_TEXT`. movielily renders at the
+subclass named `Card` that reads `$MILKLILY_TEXT`. milklily renders at the
 project's exact frame and fps, measures the animation's length, stores it in
 the record, and caches the clip. Renders are slow the first time (the TUI
 hands you the terminal so you see manim's progress); cached forever after.
@@ -325,7 +325,7 @@ lines travel with it. Overlays show in both export and review.
 In the TUI, run `:overlay` and drag an image file onto the terminal when it
 asks for the image. A file outside the project is copied into `images/stills/`
 automatically. If your browser drops an image URL instead, paste/drop its
-direct `https://…png`/`jpg`/`webp` URL; Movielily downloads a project copy
+direct `https://…png`/`jpg`/`webp` URL; Milklily downloads a project copy
 before adding it, so later renders do not depend on your Downloads folder.
 On a Linux Wayland desktop, the quicker route is: copy an image in the
 browser, select the narration scene, and press `i`. The PNG is imported into
@@ -339,14 +339,14 @@ the defaults) is a caption block in the bottom-left; use place `full` and
 write one line per name/credit:
 
 ```bash
-movielily seq overlay corte lower.typ 0.5 4 --place full "Fulano, artista"
+milklily seq overlay corte lower.typ 0.5 4 --place full "Fulano, artista"
 ```
 
 ## Colour grading & film grain
 
 Grade a scene as plain text — inline `key=value` in its note
 (`sunset saturation=120 warmth=25 grain=20`), or a reusable preset
-(`movielily grade set filmic …` + `#grade:filmic` on the note). Or use the
+(`milklily grade set filmic …` + `#grade:filmic` on the note). Or use the
 TUI panel: press `c` on a scene for live sliders (`j`/`k` pick, `←`/`→`
 adjust, `0` reset one, `r` clear). The panel writes the same tokens back into
 the note, so text and TUI are one thing. Parameters: brightness, contrast,
@@ -358,18 +358,18 @@ at export, never to source media — fully reversible. Full guide:
 
 `use|other-sequence` splices another sequence in at that point on review and
 export, so a long film assembles from chapter sequences edited on their own:
-`movielily seq use filme capitulo-1`. Sections inside spliced sequences flow
+`milklily seq use filme capitulo-1`. Sections inside spliced sequences flow
 into `chapters` with correct timestamps.
 
 ## Finding the takes: silences
 
-`movielily silences gravacao.wav` lists the spoken stretches of a continuous
+`milklily silences gravacao.wav` lists the spoken stretches of a continuous
 recording (everything between pauses of 0.6s+ under -35dB; tune with
 `--noise`, `--gap`, `--pad`). `--keep` adds them to selects.txt as numbered
 takes, ready for `seq from-selects`; it never changes the recording and is
 safe to run again without duplicating the same take.
 
-In `movielily edit`, select a narration audio scene and press `:` then type
+In `milklily edit`, select a narration audio scene and press `:` then type
 `cut silences`. This uses deliberately generous settings: only pauses at least
 1.2 seconds that are below -45dB split a take, and 0.4 seconds remains around
 each spoken stretch. It creates reviewable selects only — never a destructive
@@ -387,8 +387,8 @@ beds. Change the gain with `t` or `+`/`-` in the TUI.
 For an image animatic, anchor a cue to the cut instead of calculating seconds:
 
 ```bash
-movielily seq audio main audio/dialogue/voice.mp3 --gain 0 "narration #at_image_34"
-movielily seq audio main audio/music/theme.mp3 --gain -14 "theme #at_scene_37 #duck"
+milklily seq audio main audio/dialogue/voice.mp3 --gain 0 "narration #at_image_34"
+milklily seq audio main audio/music/theme.mp3 --gain -14 "theme #at_scene_37 #duck"
 ```
 
 The first cue starts at the 34th still image; the second starts at playable
@@ -398,8 +398,8 @@ review and export. Use `#at_52.8` only when the cue must stay at a fixed time.
 ## review: watch without rendering
 
 ```bash
-movielily review filme
-movielily review filme --from 5     # start at scene 5 (seq show numbering)
+milklily review filme
+milklily review filme --from 5     # start at scene 5 (seq show numbering)
 ```
 
 Instant, full resolution: mpv plays the exact cut through a generated
@@ -412,14 +412,14 @@ the export's finishing pass, fades/ducking/loudnorm, is not simulated.)
 ## export: the real render
 
 ```bash
-movielily export filme exports/video/filme.mp4
-movielily export filme exports/video/rascunho.mp4 --draft
+milklily export filme exports/video/filme.mp4
+milklily export filme exports/video/rascunho.mp4 --draft
 ```
 
 One H.264 file, tuned to YouTube's upload recommendations: High profile
 4.2, constant frame rate, keyframe every 2s, 2 B-frames, BT.709 flagged,
 yuv420p, AAC-LC 48kHz, `+faststart`. Resolution, fps and CRF come from
-`movielily.conf`. Export refuses to write into source media folders or over
+`milklily.conf`. Export refuses to write into source media folders or over
 any source.
 In a snapshotted project, every real export automatically commits a snapshot
 named after the output file, so any published video maps to its exact cut.
@@ -430,32 +430,32 @@ fade-out at the end, `#duck` beds compressed under the voice, and a final
 loudness normalisation to YouTube's -14 LUFS, so takes recorded on different
 days land at the same level.
 
-After exporting, `movielily chapters filme` prints the YouTube chapter list
-from your sections, and `movielily frame clip.mp4 1:02 thumb.png` grabs a
+After exporting, `milklily chapters filme` prints the YouTube chapter list
+from your sections, and `milklily frame clip.mp4 1:02 thumb.png` grabs a
 full-resolution still for the thumbnail.
 
 ## Posting to YouTube
 
 For the complete, copy-paste workflow, see [docs/youtube.md](docs/youtube.md).
 
-`movielily youtube` queues the last render in the shared YouTube pipeline. The
+`milklily youtube` queues the last render in the shared YouTube pipeline. The
 navylily timer posts it privately on the cadence you selected; use
-`movielily youtube --now` only for an immediate private upload. It reuses the existing
+`milklily youtube --now` only for an immediate private upload. It reuses the existing
 `navylily-tools/youtube_upload.sh` uploader (override the path with
-`MOVIELILY_YOUTUBE`); the first run does the Google OAuth flow in a browser.
+`MILKLILY_YOUTUBE`); the first run does the Google OAuth flow in a browser.
 The `youtube` entry in the TUI command palette (`:`) does the same. Uploads
 join the shared navylily queue and state, so the selected cadence applies to
-both Movielily renders and other queued videos. Override the destination queue
-with `MOVIELILY_YOUTUBE_QUEUE` if needed.
+both Milklily renders and other queued videos. Override the destination queue
+with `MILKLILY_YOUTUBE_QUEUE` if needed.
 
 ### Render → queue → publish
 
 ```bash
 # Render the finished cut.
-movielily export filme exports/video/filme.mp4
+milklily export filme exports/video/filme.mp4
 
 # Add it to the shared YouTube queue. The title travels with the render.
-movielily youtube --title "Título do vídeo"
+milklily youtube --title "Título do vídeo"
 
 # See its position and planned publishing date.
 nl-queue
@@ -471,15 +471,15 @@ means Sunday; monthly means the first day of the month. Use `--now` only when
 you deliberately want to bypass the queue:
 
 ```bash
-movielily youtube --now --title "Título do vídeo"
+milklily youtube --now --title "Título do vídeo"
 ```
 
 ## Snapshots and versions (git)
 
 ```bash
-movielily snapshot "primeiro corte"
-movielily snapshot list
-movielily snapshot restore d77b1c6    # safe: snapshots the current state first
+milklily snapshot "primeiro corte"
+milklily snapshot list
+milklily snapshot restore d77b1c6    # safe: snapshots the current state first
 ```
 
 Optional. The first `snapshot` turns the project into a git repo whose
@@ -488,7 +488,7 @@ small text files are versioned. It is a completely normal repo:
 
 ```bash
 git checkout -b versao-curta      # branch a different cut of the same movie
-movielily snapshot "sem a intro"
+milklily snapshot "sem a intro"
 git checkout main && git merge versao-curta   # line-per-record merges cleanly
 git remote add origin … && git push           # collaborate
 ```
@@ -500,7 +500,7 @@ The TUI's `Tab` shows the branch graph.
 
 ## Configuration
 
-`movielily.conf` at the project root:
+`milklily.conf` at the project root:
 
 ```
 name = meu-filme
@@ -513,7 +513,7 @@ crf = 18          # libx264 quality, lower is better
 ## On disk
 
 ```
-movielily.conf      config (above)
+milklily.conf      config (above)
 README.md           GitHub-facing project map
 README.txt          file-manager project map
 scripts/            writing, dialogue drafts, shot notes
@@ -536,7 +536,7 @@ exports/            rendered movies, storyboard books and frames
 
 Everything is plain text with `#` comments and blank lines ignored, so `cat`,
 `grep`, `sed`, vim and git all work directly on it. The source media folders
-are intentionally ignored by `movielily snapshot`; the sequence text stores
+are intentionally ignored by `milklily snapshot`; the sequence text stores
 readable paths back to them.
 
 ## Ideas parked for later

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"movielily/internal/project"
+	"milklily/internal/project"
 )
 
 // PickTime plays the clip in its own mpv window seeded at `seed` and lets the
@@ -18,7 +18,7 @@ func PickTime(p *project.Project, clip string, seed float64) (t float64, ok bool
 	if err != nil {
 		return 0, false, err
 	}
-	socket := filepath.Join(os.TempDir(), fmt.Sprintf("movielily-pick-%d.sock", os.Getpid()))
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("milklily-pick-%d.sock", os.Getpid()))
 	defer os.Remove(socket)
 
 	cmd := exec.Command("mpv",
@@ -26,7 +26,7 @@ func PickTime(p *project.Project, clip string, seed float64) (t float64, ok bool
 		"--force-window=yes",
 		"--keep-open=yes",
 		"--osd-level=1",
-		"--title=movielily — pick the split point — "+filepath.Base(abs),
+		"--title=milklily — pick the split point — "+filepath.Base(abs),
 		abs,
 	)
 	if err := cmd.Start(); err != nil {
@@ -42,7 +42,7 @@ func PickTime(p *project.Project, clip string, seed float64) (t float64, ok bool
 	if err := client.Bind("ENTER", "ml-pick"); err != nil {
 		return 0, false, err
 	}
-	_ = client.OSDOverlay(hudID, "{\\an7\\fs18\\bord2\\3c&H000000&\\1c&HFFFFFF&}movielily   seek to the cut point, Enter splits here, q cancels")
+	_ = client.OSDOverlay(hudID, "{\\an7\\fs18\\bord2\\3c&H000000&\\1c&HFFFFFF&}milklily   seek to the cut point, Enter splits here, q cancels")
 	if seed > 0 {
 		_ = client.SetProp("time-pos", seed)
 	}
@@ -77,7 +77,7 @@ func Reselect(p *project.Project, clip string, curIn, curOut float64) (in, out f
 		return 0, 0, false, err
 	}
 
-	socket := filepath.Join(os.TempDir(), fmt.Sprintf("movielily-%d.sock", os.Getpid()))
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("milklily-%d.sock", os.Getpid()))
 	defer os.Remove(socket)
 
 	cmd := exec.Command("mpv",
@@ -85,7 +85,7 @@ func Reselect(p *project.Project, clip string, curIn, curOut float64) (in, out f
 		"--force-window=yes",
 		"--keep-open=yes",
 		"--osd-level=1",
-		"--title=movielily — redo in/out — "+filepath.Base(abs),
+		"--title=milklily — redo in/out — "+filepath.Base(abs),
 		abs,
 	)
 	// No stdio: mpv runs in its own window and the OSD carries the whole UI,

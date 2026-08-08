@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"movielily/internal/model"
+	"milklily/internal/model"
 )
 
 func LoadMarkers(path string) ([]model.Marker, error) {

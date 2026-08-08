@@ -1,5 +1,5 @@
-// Package project locates a movielily project (the directory containing
-// movielily.conf), exposes its standard paths, and reads/writes its config.
+// Package project locates a milklily project (the directory containing
+// milklily.conf), exposes its standard paths, and reads/writes its config.
 package project
 
 import (
@@ -12,10 +12,10 @@ import (
 	"strings"
 )
 
-const ConfigName = "movielily.conf"
+const ConfigName = "milklily.conf"
 
-const gitignoreStart = "# >>> movielily"
-const gitignoreEnd = "# <<< movielily"
+const gitignoreStart = "# >>> milklily"
+const gitignoreEnd = "# <<< milklily"
 
 var projectDirs = []string{
 	"footage",     // legacy catch-all; old flat projects keep working
@@ -62,7 +62,7 @@ type folderDoc struct {
 }
 
 var projectFolderDocs = []folderDoc{
-	{"README.txt", "movielily project\n\nThe edit is plain text:\n- sequences/*.txt are the cuts\n- movielily.conf is render settings\n- markers.txt, notes.txt and selects.txt are searchable notes\n\nSource media lives in storyboards/, images/, refs/, audio/, fxs/ and footage/.\nExports belong in exports/. Git snapshots track the instructions, not the heavy media.\n"},
+	{"README.txt", "milklily project\n\nThe edit is plain text:\n- sequences/*.txt are the cuts\n- milklily.conf is render settings\n- markers.txt, notes.txt and selects.txt are searchable notes\n\nSource media lives in storyboards/, images/, refs/, audio/, fxs/ and footage/.\nExports belong in exports/. Git snapshots track the instructions, not the heavy media.\n"},
 	{"scripts/README.txt", "Writing lives here: script drafts, scene notes, dialogue and shot ideas.\n"},
 	{"storyboards/README.txt", "Storyboard drawings and animatic stills live here.\n\nUse inbox/ for newly imported boards and scenes/ when you want manual scene folders. The browser board scans this folder recursively.\n"},
 	{"storyboards/inbox/README.txt", "Images added from the browser board land here by default.\n"},
@@ -83,7 +83,7 @@ var projectFolderDocs = []folderDoc{
 	{"fxs/overlays/README.txt", "Transparent PNGs and other overlay elements.\n"},
 	{"fxs/mattes/README.txt", "Masks and mattes.\n"},
 	{"fxs/textures/README.txt", "Grain, paper, dust, light leaks and texture plates.\n"},
-	{"footage/README.txt", "Raw video and legacy catch-all media. Old movielily projects can keep flat files here.\n"},
+	{"footage/README.txt", "Raw video and legacy catch-all media. Old milklily projects can keep flat files here.\n"},
 	{"footage/raw/README.txt", "Raw camera clips and imported footage.\n"},
 	{"sequences/README.txt", "Plain-text cuts live here. Example records: section|Scene 1, image|storyboards/inbox/001.png|2|note, audio|audio/music/song.wav|-12|#duck.\n"},
 	{"exports/README.txt", "Generated work goes here: video/ for renders, storyboard-books/ for Typst/PDF books and frames/ for still outputs.\n"},
@@ -188,7 +188,7 @@ func IsSequenceFileName(name string) bool {
 		!strings.EqualFold(name, "README.txt")
 }
 
-// Find walks up from start looking for movielily.conf.
+// Find walks up from start looking for milklily.conf.
 func Find(start string) (*Project, error) {
 	dir, err := filepath.Abs(start)
 	if err != nil {
@@ -205,7 +205,7 @@ func Find(start string) (*Project, error) {
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return nil, fmt.Errorf("not inside a movielily project (no %s here or in any parent; run 'movielily init')", ConfigName)
+			return nil, fmt.Errorf("not inside a milklily project (no %s here or in any parent; run 'milklily init')", ConfigName)
 		}
 		dir = parent
 	}
@@ -422,13 +422,13 @@ func writeProjectMarkdown(root, name string) error {
 		name = filepath.Base(root)
 	}
 	body := "# " + name + "\n\n" +
-		"A movielily short-film project.\n\n" +
+		"A milklily short-film project.\n\n" +
 		"## Edit\n\n" +
-		"- `sequences/main.txt` is the main cut. It is plain text and safe to edit in movielily, vim, or GitHub.\n" +
-		"- `movielily board main --open` opens the browser light table for storyboard images.\n" +
-		"- `movielily edit main` opens the terminal editor for timing, audio, overlays and final checks.\n" +
-		"- `movielily storyboard main exports/storyboard-books/main.pdf` makes a printable storyboard book.\n" +
-		"- `movielily export main exports/video/main.mp4` renders the final video.\n\n" +
+		"- `sequences/main.txt` is the main cut. It is plain text and safe to edit in milklily, vim, or GitHub.\n" +
+		"- `milklily board main --open` opens the browser light table for storyboard images.\n" +
+		"- `milklily edit main` opens the terminal editor for timing, audio, overlays and final checks.\n" +
+		"- `milklily storyboard main exports/storyboard-books/main.pdf` makes a printable storyboard book.\n" +
+		"- `milklily export main exports/video/main.mp4` renders the final video.\n\n" +
 		"## Folders\n\n" +
 		"```text\n" +
 		"scripts/                  script drafts, dialogue and shot notes\n" +
@@ -449,7 +449,7 @@ func writeProjectMarkdown(root, name string) error {
 		"## Git\n\n" +
 		"The `.gitignore` keeps source media, generated exports and caches out of Git. Commit the text instructions and folder notes; sync heavy media out of band.\n\n" +
 		"```bash\n" +
-		"movielily snapshot \"first cut\"\n" +
+		"milklily snapshot \"first cut\"\n" +
 		"git remote add origin git@github.com:USER/" + filepath.Base(root) + ".git\n" +
 		"git push -u origin main\n" +
 		"```\n"
@@ -468,13 +468,13 @@ func writeDefaultSequence(root string) error {
 		}
 	}
 	path := filepath.Join(dir, "main.txt")
-	content := "# main - movielily sequence\n" +
-		"# Add storyboard images with: movielily board main --open\n" +
+	content := "# main - milklily sequence\n" +
+		"# Add storyboard images with: milklily board main --open\n" +
 		"section|Scene 01 - Opening\n"
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 
-// EnsureGitignore installs or appends the movielily ignore block. The block is
+// EnsureGitignore installs or appends the milklily ignore block. The block is
 // intentionally idempotent so snapshot/doctor can repair older projects.
 func EnsureGitignore(root string) error {
 	path := filepath.Join(root, ".gitignore")
@@ -586,7 +586,7 @@ func readConfig(path string) (Config, error) {
 
 func writeConfig(path string, c Config) error {
 	var b strings.Builder
-	b.WriteString("# movielily project config\n")
+	b.WriteString("# milklily project config\n")
 	b.WriteString("name = " + c.Name + "\n\n")
 	b.WriteString("# export target (4:3, SDR)\n")
 	b.WriteString("width = " + strconv.Itoa(c.Width) + "\n")

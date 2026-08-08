@@ -1,4 +1,4 @@
-// Package model defines movielily's plain-text records and how they are parsed
+// Package model defines milklily's plain-text records and how they are parsed
 // and formatted. It performs no I/O so it is easy to test, and the formats here
 // are the project's real on-disk contract.
 package model

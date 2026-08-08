@@ -3,9 +3,9 @@ package tui
 import (
 	"fmt"
 	"io"
-	"movielily/internal/manim"
-	"movielily/internal/model"
-	"movielily/internal/typst"
+	"milklily/internal/manim"
+	"milklily/internal/model"
+	"milklily/internal/typst"
 	"net/http"
 	"net/url"
 	"os"
@@ -496,13 +496,13 @@ func (e *editor) commitOvlSpec() {
 	e.status = fmt.Sprintf("overlay %s riding the scene above (+%ss for %ss @ %s) · w to save", it.File, trimf(at), trimf(dur), place)
 }
 
-// youtubeOp queues the last render for YouTube by re-invoking movielily's own
+// youtubeOp queues the last render for YouTube by re-invoking milklily's own
 // `youtube` subcommand (the TUI can't import the cli package). It runs with
 // the terminal handed over, so the uploader's OAuth prompt and progress show.
 func (e *editor) youtubeOp(st *xterm.State) {
 	exe, err := os.Executable()
 	if err != nil {
-		exe = "movielily"
+		exe = "milklily"
 	}
 	e.suspend(st)
 	fmt.Println("queueing the last render for YouTube…")
@@ -536,7 +536,7 @@ func (e *editor) silencesOp(st *xterm.State) {
 	}
 	exe, err := os.Executable()
 	if err != nil {
-		exe = "movielily"
+		exe = "milklily"
 	}
 	e.suspend(st)
 	fmt.Println("finding only clearly long, quiet pauses — source audio will not be changed…")

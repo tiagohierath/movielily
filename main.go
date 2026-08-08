@@ -1,6 +1,6 @@
 package main
 
-import "movielily/internal/cli"
+import "milklily/internal/cli"
 
 func main() {
 	cli.Execute()

@@ -8,12 +8,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"movielily/internal/ffmpeg"
-	"movielily/internal/manim"
-	"movielily/internal/model"
-	"movielily/internal/project"
-	"movielily/internal/store"
-	"movielily/internal/typst"
+	"milklily/internal/ffmpeg"
+	"milklily/internal/manim"
+	"milklily/internal/model"
+	"milklily/internal/project"
+	"milklily/internal/store"
+	"milklily/internal/typst"
 )
 
 func newStoryboardCmd() *cobra.Command {
@@ -25,7 +25,7 @@ func newStoryboardCmd() *cobra.Command {
 		Short: "Export a printable Typst storyboard book",
 		Long: "storyboard writes a printable Typst book for a sequence: six rows per\n" +
 			"page, each row with the board image on the left and shot notes, tags,\n" +
-			"frame counts and timing on the right. If <out> ends in .pdf, movielily\n" +
+			"frame counts and timing on the right. If <out> ends in .pdf, milklily\n" +
 			"also runs typst and leaves the editable .typ beside it.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -242,7 +242,7 @@ func writeStoryboardTyp(p *project.Project, seq, typPath, assetDir, aspect strin
 			fmt.Fprintf(&b, "#pagebreak()\n")
 		}
 		fmt.Fprintf(&b, "#grid(columns: (1fr, auto), column-gutter: 8mm,\n")
-		fmt.Fprintf(&b, "  [#text(size: 12pt, weight: \"bold\")[MOVIELILY STORYBOARD / #%s]],\n", typString(seq))
+		fmt.Fprintf(&b, "  [#text(size: 12pt, weight: \"bold\")[MILKLILY STORYBOARD / #%s]],\n", typString(seq))
 		fmt.Fprintf(&b, "  [#text(size: 7pt)[#%s / #%s / page %d of %d]],\n", typString(p.Config.Name), typString(aspect), page+1, pages)
 		fmt.Fprintf(&b, ")\n")
 		if page == 0 && len(beds) > 0 {

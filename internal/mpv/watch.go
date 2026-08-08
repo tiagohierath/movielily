@@ -9,9 +9,9 @@ import (
 	"sort"
 	"time"
 
-	"movielily/internal/model"
-	"movielily/internal/project"
-	"movielily/internal/store"
+	"milklily/internal/model"
+	"milklily/internal/project"
+	"milklily/internal/store"
 )
 
 const (
@@ -36,7 +36,7 @@ func Watch(p *project.Project, clip string) error {
 	}
 	stored := p.StoreName(clip)
 
-	socket := filepath.Join(os.TempDir(), fmt.Sprintf("movielily-%d.sock", os.Getpid()))
+	socket := filepath.Join(os.TempDir(), fmt.Sprintf("milklily-%d.sock", os.Getpid()))
 	defer os.Remove(socket)
 
 	cmd := exec.Command("mpv",
@@ -44,7 +44,7 @@ func Watch(p *project.Project, clip string) error {
 		"--force-window=yes",
 		"--keep-open=yes",
 		"--osd-level=1",
-		"--title=movielily — "+filepath.Base(abs),
+		"--title=milklily — "+filepath.Base(abs),
 		abs,
 	)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
@@ -63,7 +63,7 @@ func Watch(p *project.Project, clip string) error {
 	if d, err := client.Command("get_property", "mpv-version"); err == nil {
 		_ = json.Unmarshal(d, &mpvVer)
 	}
-	fmt.Printf("movielily watch %s — connected to %s\n", WatchVersion, mpvVer)
+	fmt.Printf("milklily watch %s — connected to %s\n", WatchVersion, mpvVer)
 	fmt.Println("keys: m=marker  i=IN  o=OUT  Enter=save select  q=quit")
 
 	for key, msg := range map[string]string{"m": "ml-marker", "i": "ml-in", "o": "ml-out", "ENTER": "ml-select"} {
@@ -114,7 +114,7 @@ func Watch(p *project.Project, clip string) error {
 		case <-done:
 			fmt.Printf("done — %d marker(s), %d select(s) added\n", markers, selects)
 			if markers > 0 && model.IsAudioFile(stored) {
-				fmt.Printf("next: movielily essay <sequence> %s\n", stored)
+				fmt.Printf("next: milklily essay <sequence> %s\n", stored)
 			}
 			return nil
 		case ev := <-client.Events():
@@ -226,7 +226,7 @@ func hud(haveIn, haveOut bool, inPt, outPt float64, markers, selects int) string
 		out = "{\\1c&H0000FF&}OUT " + clock(outPt)
 	}
 	return fmt.Sprintf(
-		"{\\an7\\fs18\\bord2\\3c&H000000&\\1c&HFFFFFF&}movielily   m=mark  i/o=in/out  Enter=select\\N%s\\N%s\\N{\\1c&HFFFFFF&}markers %d   selects %d",
+		"{\\an7\\fs18\\bord2\\3c&H000000&\\1c&HFFFFFF&}milklily   m=mark  i/o=in/out  Enter=select\\N%s\\N%s\\N{\\1c&HFFFFFF&}markers %d   selects %d",
 		in, out, markers, selects,
 	)
 }

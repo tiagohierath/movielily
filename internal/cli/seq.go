@@ -8,11 +8,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"movielily/internal/manim"
-	"movielily/internal/model"
-	"movielily/internal/project"
-	"movielily/internal/store"
-	"movielily/internal/typst"
+	"milklily/internal/manim"
+	"milklily/internal/model"
+	"milklily/internal/project"
+	"milklily/internal/store"
+	"milklily/internal/typst"
 )
 
 func newSeqCmd() *cobra.Command {
@@ -263,8 +263,8 @@ func newSeqAnimCmd() *cobra.Command {
 		Use:   "anim <sequence> <template> <text...>",
 		Short: "Append an animated card (manim template + your text)",
 		Long: "anim inserts an animated card rendered from a manim scene in anims/ (the\n" +
-			"scene class must be named Card; it reads its text from $MOVIELILY_TEXT).\n" +
-			"movielily renders it at the project's frame and fps, measures its length,\n" +
+			"scene class must be named Card; it reads its text from $MILKLILY_TEXT).\n" +
+			"milklily renders it at the project's frame and fps, measures its length,\n" +
 			"and caches it, so each template+text pair renders once. First use creates\n" +
 			"anims/card.py to start from.",
 		Args: cobra.MinimumNArgs(3),

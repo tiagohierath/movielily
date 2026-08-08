@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"movielily/internal/project"
+	"milklily/internal/project"
 )
 
 func newInitCmd() *cobra.Command {
@@ -17,8 +17,8 @@ func newInitCmd() *cobra.Command {
 	var initGit bool
 	cmd := &cobra.Command{
 		Use:   "init [dir]",
-		Short: "Create a new movielily short-film project",
-		Long: "Create a new movielily project. `movielily init my-film` makes a my-film/\n" +
+		Short: "Create a new milklily short-film project",
+		Long: "Create a new milklily project. `milklily init my-film` makes a my-film/\n" +
 			"folder with clear short-film areas: scripts/, refs/, storyboards/, images/,\n" +
 			"audio/, fxs/, footage/, sequences/ and exports/. Add --git to make the\n" +
 			"project immediately GitHub-ready: instructions committed, media ignored.",
@@ -42,7 +42,7 @@ func newInitCmd() *cobra.Command {
 				fmt.Printf("copied %d media file(s) into %s\n", n, p.FootageRawDir())
 			}
 			if initGit {
-				if err := takeSnapshotProject(p, "initial movielily project"); err != nil {
+				if err := takeSnapshotProject(p, "initial milklily project"); err != nil {
 					return err
 				}
 				fmt.Println("git ready: add a GitHub remote and push")
@@ -58,8 +58,8 @@ func newInitCmd() *cobra.Command {
 			fmt.Printf("  footage/      raw clips and legacy catch-all media\n")
 			fmt.Printf("  sequences/    plain-text cuts\n")
 			fmt.Printf("  exports/      rendered movies and PDFs\n")
-			fmt.Println("\nthen: movielily board main --open")
-			fmt.Println("or:   movielily edit main")
+			fmt.Println("\nthen: milklily board main --open")
+			fmt.Println("or:   milklily edit main")
 			return nil
 		},
 	}

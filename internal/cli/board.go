@@ -14,9 +14,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"movielily/internal/model"
-	"movielily/internal/project"
-	"movielily/internal/store"
+	"milklily/internal/model"
+	"milklily/internal/project"
+	"milklily/internal/store"
 )
 
 func newBoardCmd() *cobra.Command {
@@ -295,7 +295,7 @@ func (s *boardServer) loadItems() ([]model.SequenceItem, error) {
 }
 
 func (s *boardServer) save(blocks []boardBlock) error {
-	lines := []string{"# " + s.name + " - edited with movielily board"}
+	lines := []string{"# " + s.name + " - edited with milklily board"}
 	for _, b := range blocks {
 		it := b.Item
 		switch {
@@ -310,7 +310,7 @@ func (s *boardServer) save(blocks []boardBlock) error {
 			}
 			lines = append(lines, it.String())
 		default:
-			return fmt.Errorf("movielily board is image-only; refusing to save %s record", it.Kind)
+			return fmt.Errorf("milklily board is image-only; refusing to save %s record", it.Kind)
 		}
 	}
 	return store.WriteLines(s.p.Sequence(s.name), lines)
@@ -343,7 +343,7 @@ func (s *boardServer) importUnusedImages(frames int) (int, error) {
 	if n == 0 {
 		return 0, nil
 	}
-	lines := []string{"# " + s.name + " - edited with movielily board"}
+	lines := []string{"# " + s.name + " - edited with milklily board"}
 	for _, it := range items {
 		lines = append(lines, it.String())
 	}
@@ -403,7 +403,7 @@ func validateBoardItems(seq string, items []model.SequenceItem) error {
 		if it.Kind == model.KindImage || it.Kind == model.KindSection {
 			continue
 		}
-		return fmt.Errorf("movielily board is image-only; %s contains a %s record for %q (use the TUI for video/audio/voice/title work)",
+		return fmt.Errorf("milklily board is image-only; %s contains a %s record for %q (use the TUI for video/audio/voice/title work)",
 			seq, it.Kind, it.File)
 	}
 	return nil
@@ -505,7 +505,7 @@ const boardHTML2 = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>movielily board</title>
+<title>milklily board</title>
 <style>
 :root { color-scheme: light; --bg:#c9c5b6; --paper:#f3efe3; --fg:#272720; --muted:#68685e; --line:#a9a394; --soft:#ded9ca; --drop:#3b3a33; --danger:#7e2730; --hi:#fffdf4; --shade:#b9b3a4; --well:#c8c5b9; --accent:#4d5c63; --preview-w:360px; }
 * { box-sizing: border-box; }
@@ -925,13 +925,13 @@ function setPreviewWidth(px, persist) {
   px = clamp(Math.round(Number(px) || 360), bounds.min, bounds.max);
   document.documentElement.style.setProperty("--preview-w", px + "px");
   if (persist) {
-    try { localStorage.setItem("movielily.previewWidth", String(px)); } catch (e) {}
+    try { localStorage.setItem("milklily.previewWidth", String(px)); } catch (e) {}
   }
   renderPreview();
 }
 function initPreviewWidth() {
   var saved = "";
-  try { saved = localStorage.getItem("movielily.previewWidth") || ""; } catch (e) {}
+  try { saved = localStorage.getItem("milklily.previewWidth") || ""; } catch (e) {}
   if (saved) setPreviewWidth(Number(saved), false);
 }
 function bindPreviewSplitter() {

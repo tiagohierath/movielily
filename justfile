@@ -1,11 +1,11 @@
-# movielily tasks — run `just` to list
+# milklily tasks — run `just` to list
 
 default:
     @just --list
 
-# build the CLI to ./bin/movielily
+# build the CLI to ./bin/milklily
 build:
-    go build -o bin/movielily .
+    go build -o bin/milklily .
 
 # run without building, e.g. `just run watch clip.mp4`
 run *args:

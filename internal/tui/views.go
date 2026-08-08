@@ -3,8 +3,8 @@ package tui
 import (
 	"fmt"
 	"io"
-	"movielily/internal/mpv"
-	"movielily/internal/store"
+	"milklily/internal/mpv"
+	"milklily/internal/store"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -215,7 +215,7 @@ func (e *editor) drawSnapshots() {
 
 	if len(e.snaps) == 0 {
 		e.put(3, 2, "\x1b[2mno snapshots yet.\x1b[0m")
-		e.put(5, 2, "take one from the shell:  movielily snapshot \"first cut\"")
+		e.put(5, 2, "take one from the shell:  milklily snapshot \"first cut\"")
 		e.put(6, 2, "exports auto-snapshot once a repo exists.")
 		foot := " Tab/q back"
 		io.WriteString(e.out, moveTo(e.h, 1)+"\x1b[7m"+padRight(trunc(foot, e.w), e.w)+"\x1b[0m")
@@ -327,7 +327,7 @@ func (e *editor) pushUndo() {
 }
 
 func (e *editor) save() error {
-	lines := []string{"# " + e.name + " — edited with movielily edit"}
+	lines := []string{"# " + e.name + " — edited with milklily edit"}
 	for _, it := range e.items {
 		lines = append(lines, it.String())
 	}

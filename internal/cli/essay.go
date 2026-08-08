@@ -11,19 +11,19 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"movielily/internal/model"
-	"movielily/internal/project"
-	"movielily/internal/store"
+	"milklily/internal/model"
+	"milklily/internal/project"
+	"milklily/internal/store"
 )
 
 // essay turns simple timestamp cues into a narration-first video essay. Mark
-// timestamps while listening with `movielily watch narration.wav` (press m),
+// timestamps while listening with `milklily watch narration.wav` (press m),
 // then this command asks for the image to show at each one.
 func newEssayCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "essay <sequence> <narration>",
 		Short: "Build a simple image-over-narration essay from watch markers",
-		Long: "Listen with 'movielily watch <narration>' and press m whenever the\n" +
+		Long: "Listen with 'milklily watch <narration>' and press m whenever the\n" +
 			"image should change. Then run essay: type an image name at each cue,\n" +
 			"or press Enter to leave that moment black. It creates a fresh sequence\n" +
 			"with the narration as one continuous track and full-screen images at\n" +
@@ -60,7 +60,7 @@ func newEssayCmd() *cobra.Command {
 				}
 			}
 			if len(cues) == 0 {
-				return fmt.Errorf("no markers for %s; run 'movielily watch %s' and press m at each image change", narration, args[1])
+				return fmt.Errorf("no markers for %s; run 'milklily watch %s' and press m at each image change", narration, args[1])
 			}
 			sort.Slice(cues, func(i, j int) bool { return cues[i].Time < cues[j].Time })
 			duration, err := mediaDuration(p, narration)
@@ -105,7 +105,7 @@ func newEssayCmd() *cobra.Command {
 			if err := store.WriteLines(seqPath, lines); err != nil {
 				return err
 			}
-			fmt.Fprintf(out, "\ncreated sequences/%s.txt — next: movielily edit %s\n", strings.TrimSuffix(filepath.Base(seqPath), ".txt"), args[0])
+			fmt.Fprintf(out, "\ncreated sequences/%s.txt — next: milklily edit %s\n", strings.TrimSuffix(filepath.Base(seqPath), ".txt"), args[0])
 			return nil
 		},
 	}

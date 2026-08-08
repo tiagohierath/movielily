@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"movielily/internal/ffmpeg"
-	"movielily/internal/model"
-	"movielily/internal/project"
+	"milklily/internal/ffmpeg"
+	"milklily/internal/model"
+	"milklily/internal/project"
 )
 
 func joinArgs(args []string) string { return strings.TrimSpace(strings.Join(args, " ")) }
@@ -79,7 +79,7 @@ func storeExistingMedia(p *project.Project, name string) (string, error) {
 	return p.StoreName(abs), nil
 }
 
-// refuseInsideFootage guards writes: nothing movielily produces may land in a
+// refuseInsideFootage guards writes: nothing milklily produces may land in a
 // source media folder.
 func refuseInsideFootage(p *project.Project, out string) error {
 	outAbs, err := filepath.Abs(out)

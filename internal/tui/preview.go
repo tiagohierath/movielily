@@ -3,10 +3,10 @@ package tui
 import (
 	"fmt"
 	"hash/fnv"
-	"movielily/internal/ffmpeg"
-	"movielily/internal/manim"
-	"movielily/internal/model"
-	"movielily/internal/typst"
+	"milklily/internal/ffmpeg"
+	"milklily/internal/manim"
+	"milklily/internal/model"
+	"milklily/internal/typst"
 	"path/filepath"
 )
 

@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"strings"
 
-	"movielily/internal/model"
-	"movielily/internal/store"
+	"milklily/internal/model"
+	"milklily/internal/store"
 )
 
 // Scene is one playable item plus where it lands in the finished movie.

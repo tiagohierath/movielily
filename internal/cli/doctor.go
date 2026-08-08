@@ -9,14 +9,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"movielily/internal/project"
+	"milklily/internal/project"
 )
 
 func newDoctorCmd() *cobra.Command {
 	var fix bool
 	cmd := &cobra.Command{
 		Use:   "doctor",
-		Short: "Check and repair a movielily project workspace",
+		Short: "Check and repair a milklily project workspace",
 		Long: "doctor checks whether the current project is easy to maintain: standard\n" +
 			"folders exist, text instructions are present, media is ignored by git,\n" +
 			"and the repo is ready to push to GitHub. Use --fix to recreate missing\n" +
@@ -52,20 +52,20 @@ func printDoctor(p *project.Project, fixed bool) error {
 			fmt.Printf("  - %s\n", rel)
 		}
 		if !fixed {
-			fmt.Println("  run: movielily doctor --fix")
+			fmt.Println("  run: milklily doctor --fix")
 		}
 	}
 
-	ok, err := hasMovielilyGitignore(p.Root)
+	ok, err := hasMilklilyGitignore(p.Root)
 	if err != nil {
 		return err
 	}
 	if ok {
 		fmt.Println("gitignore: ok, media and exports stay out of git")
 	} else {
-		fmt.Println("gitignore: missing movielily block")
+		fmt.Println("gitignore: missing milklily block")
 		if !fixed {
-			fmt.Println("  run: movielily doctor --fix")
+			fmt.Println("  run: milklily doctor --fix")
 		}
 	}
 
@@ -89,7 +89,7 @@ func printDoctor(p *project.Project, fixed bool) error {
 		}
 	} else {
 		fmt.Println("git:       not initialized")
-		fmt.Println("  run: movielily snapshot \"first cut\"")
+		fmt.Println("  run: milklily snapshot \"first cut\"")
 	}
 
 	seqs, err := countSequenceFiles(p.SequencesDir())
@@ -142,7 +142,7 @@ func missingProjectPaths(p *project.Project) []string {
 	return missing
 }
 
-func hasMovielilyGitignore(root string) (bool, error) {
+func hasMilklilyGitignore(root string) (bool, error) {
 	body, err := os.ReadFile(filepath.Join(root, ".gitignore"))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -150,7 +150,7 @@ func hasMovielilyGitignore(root string) (bool, error) {
 		}
 		return false, err
 	}
-	return strings.Contains(string(body), "# >>> movielily"), nil
+	return strings.Contains(string(body), "# >>> milklily"), nil
 }
 
 func countSequenceFiles(dir string) (int, error) {

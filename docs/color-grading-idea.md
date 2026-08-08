@@ -54,7 +54,7 @@ Most grading decisions are made on stills anyway. Professional colorists use
 moving footage eventually, but they spend a surprising amount of time staring
 at single frames.
 
-## Grades as text (fits movielily perfectly)
+## Grades as text (fits milklily perfectly)
 
 ```
 grade "documentary"

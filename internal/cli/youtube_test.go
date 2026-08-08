@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"movielily/internal/project"
+	"milklily/internal/project"
 )
 
 func TestQueueLastRenderStagesVideoAndTitle(t *testing.T) {
@@ -24,8 +24,8 @@ func TestQueueLastRenderStagesVideoAndTitle(t *testing.T) {
 		t.Fatal(err)
 	}
 	queue := filepath.Join(root, "youtube-queue")
-	t.Setenv("MOVIELILY_YOUTUBE", script)
-	t.Setenv("MOVIELILY_YOUTUBE_QUEUE", queue)
+	t.Setenv("MILKLILY_YOUTUBE", script)
+	t.Setenv("MILKLILY_YOUTUBE_QUEUE", queue)
 
 	target, err := QueueLastRender(p, source, "My lesson")
 	if err != nil {

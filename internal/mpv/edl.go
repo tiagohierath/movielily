@@ -7,13 +7,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"movielily/internal/ffmpeg"
-	"movielily/internal/manim"
-	"movielily/internal/model"
-	"movielily/internal/project"
-	"movielily/internal/store"
-	"movielily/internal/timeline"
-	"movielily/internal/typst"
+	"milklily/internal/ffmpeg"
+	"milklily/internal/manim"
+	"milklily/internal/model"
+	"milklily/internal/project"
+	"milklily/internal/store"
+	"milklily/internal/timeline"
+	"milklily/internal/typst"
 )
 
 // Review plays a sequence in mpv as a SIMULATION of the export, with nothing
@@ -117,7 +117,7 @@ func reviewArgs(p *project.Project, name string, items []model.SequenceItem, fro
 	frameChain := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1", w, h, w, h)
 	args = []string{
 		path,
-		"--force-media-title=movielily review · " + name,
+		"--force-media-title=milklily review · " + name,
 	}
 
 	// Per-clip audio corrections, applied to the same timeline windows the
@@ -353,7 +353,7 @@ func ReviewFrom(p *project.Project, name string, items []model.SequenceItem, fro
 func OpenDetached(path string) error {
 	cmd := exec.Command("mpv",
 		"--force-window=yes", "--keep-open=yes", "--image-display-duration=inf",
-		"--title=movielily · "+filepath.Base(path), path)
+		"--title=milklily · "+filepath.Base(path), path)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("could not start mpv (is it installed?): %w", err)
 	}

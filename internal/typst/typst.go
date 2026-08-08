@@ -13,12 +13,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"movielily/internal/project"
+	"milklily/internal/project"
 )
 
 // DefaultTemplate is written to titles/chapter.typ the first time title cards
 // are used, so there is always something to reuse and edit.
-const DefaultTemplate = `// movielily title card. The card's text arrives as sys.inputs.text;
+const DefaultTemplate = `// milklily title card. The card's text arrives as sys.inputs.text;
 // this file is the STYLE, reused across every card that names it.
 // Duplicate it (e.g. cp chapter.typ lower-third.typ) to make new styles.
 #let card-text = sys.inputs.at("text", default: "Title")
@@ -36,7 +36,7 @@ func cacheDir(p *project.Project) string {
 
 // DefaultLowerTemplate is the starter overlay card: a transparent page with a
 // small caption block, for names/citations riding a scene (place it "full").
-const DefaultLowerTemplate = `// movielily lower-third overlay card. Transparent page: use it as an
+const DefaultLowerTemplate = `// milklily lower-third overlay card. Transparent page: use it as an
 // overlay with place "full"; the text arrives as sys.inputs.text.
 #let card-text = sys.inputs.at("text", default: "Name")
 #set page(width: 720pt, height: 540pt, margin: 0pt, fill: none)

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"movielily/internal/project"
+	"milklily/internal/project"
 )
 
 func TestSnapshotStagesOnlyPortableProjectInstructions(t *testing.T) {
@@ -36,7 +36,7 @@ func TestSnapshotStagesOnlyPortableProjectInstructions(t *testing.T) {
 			t.Fatalf("snapshot tracked %q:\n%s", forbidden, tracked)
 		}
 	}
-	if !strings.Contains(tracked, "sequences/main.txt") || !strings.Contains(tracked, "movielily.conf") {
+	if !strings.Contains(tracked, "sequences/main.txt") || !strings.Contains(tracked, "milklily.conf") {
 		t.Fatalf("snapshot missed project instructions:\n%s", tracked)
 	}
 }

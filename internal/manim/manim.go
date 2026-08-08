@@ -1,6 +1,6 @@
 // Package manim renders animated cards: small manim scenes that live in the
 // project's anims/ folder and receive their text per use, mirroring the typst
-// title cards but animated. movielily always renders them at the project's
+// title cards but animated. milklily always renders them at the project's
 // own frame and fps (4:3, 30fps by default), so templates carry only style.
 // Rendered clips land in a content-addressed cache; a given template+text is
 // rendered once and reused forever.
@@ -15,14 +15,14 @@ import (
 	"strconv"
 	"strings"
 
-	"movielily/internal/project"
+	"milklily/internal/project"
 )
 
 // DefaultTemplate is written to anims/card.py on first use. The contract:
 // a template defines a Scene subclass named Card and reads its text from
-// $MOVIELILY_TEXT. Frame size and fps come from movielily, not the file.
-const DefaultTemplate = `# movielily animated card. The card's text arrives in $MOVIELILY_TEXT; this
-# file is the reusable STYLE (duplicate it to make new ones). movielily
+// $MILKLILY_TEXT. Frame size and fps come from milklily, not the file.
+const DefaultTemplate = `# milklily animated card. The card's text arrives in $MILKLILY_TEXT; this
+# file is the reusable STYLE (duplicate it to make new ones). milklily
 # renders it at the project's frame and fps (4:3 1440x1080, 30fps by
 # default), so nothing here hard-codes a resolution.
 #
@@ -35,7 +35,7 @@ from manim import *
 class Card(Scene):
     def construct(self):
         self.camera.background_color = "#000000"
-        text = Text(os.environ.get("MOVIELILY_TEXT", "Title"), font_size=72)
+        text = Text(os.environ.get("MILKLILY_TEXT", "Title"), font_size=72)
         self.play(Write(text), run_time=1.5)
         self.wait(1.5)
         self.play(FadeOut(text), run_time=0.8)
@@ -146,7 +146,7 @@ func Render(p *project.Project, template, text string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	work, err := os.MkdirTemp("", "movielily-manim-")
+	work, err := os.MkdirTemp("", "milklily-manim-")
 	if err != nil {
 		return "", err
 	}
@@ -161,7 +161,7 @@ func Render(p *project.Project, template, text string) (string, error) {
 	)
 	cmd := exec.Command(argv[0], args...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr // renders take a while; show progress
-	cmd.Env = append(envWithoutNixBreakage(argv[0]), "MOVIELILY_TEXT="+text)
+	cmd.Env = append(envWithoutNixBreakage(argv[0]), "MILKLILY_TEXT="+text)
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("manim render failed for %s (is the scene named Card?): %w", StoreName(template), err)
 	}

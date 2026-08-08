@@ -7,8 +7,8 @@ import (
 	"image"
 	"io"
 	"math"
-	"movielily/internal/manim"
-	"movielily/internal/model"
+	"milklily/internal/manim"
+	"milklily/internal/model"
 	"os"
 	"regexp"
 	"strconv"
@@ -16,7 +16,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"movielily/internal/grade"
+	"milklily/internal/grade"
 )
 
 // ---- rendering ------------------------------------------------------------
@@ -179,7 +179,7 @@ func (e *editor) drawHeader() {
 	if e.dirty {
 		d = " · modified"
 	}
-	s := fmt.Sprintf(" movielily edit · %s · %d scene(s) · %s%s", e.name, e.sceneCount(), mmss(total), d)
+	s := fmt.Sprintf(" milklily edit · %s · %d scene(s) · %s%s", e.name, e.sceneCount(), mmss(total), d)
 	io.WriteString(e.out, moveTo(1, 1)+"\x1b[7m"+padRight(trunc(s, e.w), e.w)+"\x1b[0m")
 }
 
@@ -228,7 +228,7 @@ func (e *editor) drawFooter() {
 // drawHelp paints the key reference over the list; any key closes it.
 func (e *editor) drawHelp() {
 	lines := []string{
-		"  movielily edit · keys                                ",
+		"  milklily edit · keys                                ",
 		"                                                       ",
 		"  j/k ↑/↓  move            ⏎    open item / redo in-out  ",
 		"  J/K      reorder         +/-  nudge out/duration/gain ",

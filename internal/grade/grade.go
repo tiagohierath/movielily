@@ -1,4 +1,4 @@
-// Package grade is movielily's color-grading and film-grain engine. A grade is
+// Package grade is milklily's color-grading and film-grain engine. A grade is
 // plain text: friendly key=value parameters (saturation=120, grain=30) with a
 // neutral default for each, so it is fully reversible (delete the text),
 // reproducible (same text, same pixels), and diffable. Grades never touch
@@ -23,7 +23,7 @@ import (
 	"strconv"
 	"strings"
 
-	"movielily/internal/model"
+	"milklily/internal/model"
 )
 
 // param describes one knob: its neutral value and the friendly range, plus how
@@ -293,7 +293,7 @@ func Save(dir, name string, g *Grade) error {
 		return err
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "# movielily grade preset. key=value, one per line.\n")
+	fmt.Fprintf(&b, "# milklily grade preset. key=value, one per line.\n")
 	fmt.Fprintf(&b, "# apply to a scene by tagging its note: #grade:%s\n", name)
 	for _, n := range Names() {
 		fmt.Fprintf(&b, "# %s: %s\n", n, params[n].help)

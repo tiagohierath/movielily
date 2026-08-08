@@ -123,7 +123,7 @@ func TestSetChapters(t *testing.T) {
 	}
 
 	// The persistent HUD overlay command is accepted.
-	if err := c.OSDOverlay(hudID, "{\\an7}movielily"); err != nil {
+	if err := c.OSDOverlay(hudID, "{\\an7}milklily"); err != nil {
 		t.Fatalf("osd-overlay: %v", err)
 	}
 }

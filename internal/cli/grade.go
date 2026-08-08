@@ -9,14 +9,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"movielily/internal/grade"
-	"movielily/internal/project"
+	"milklily/internal/grade"
+	"milklily/internal/project"
 )
 
 // The grade command manages reusable colour-grade / film-grain presets, stored
 // as plain grades/*.grade text files. Applying a grade to a scene is done in
 // the scene's note (inline params, or a #grade:name tag) — reversible and
-// reproducible, never touching footage. See `movielily grade params`.
+// reproducible, never touching footage. See `milklily grade params`.
 func newGradeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "grade",
