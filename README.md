@@ -194,6 +194,32 @@ simple vertical/horizontal pan, press play, then save. It writes the same
 Uploads from the browser land in `storyboards/inbox/`. The board scans
 `storyboards/`, `images/`, `refs/`, `fxs/` and legacy `footage/` recursively.
 
+#### Board keyboard shortcuts
+
+The board is designed to work without reaching for the mouse after selecting a
+shot. Press `?` in the board to see the same list.
+
+| Keys | Action |
+|---|---|
+| `Tab` | Switch keyboard focus between unsorted images and the EDL |
+| `h` / `l` or `←` / `→` | Move left / right in the focused pane |
+| `j` / `k` or `↓` / `↑` | Move down / up; in the image grid, moves by row |
+| `J` / `K` | Move the selected shot down / up in the sequence |
+| `U` / `I` | Shorten / lengthen the selected EDL shot by 0.1 seconds |
+| `gg` / `G` | Jump to the first / last item in the focused pane |
+| `[` / `]` | Shorten / lengthen the selected shot by 0.1 seconds |
+| `Space` | Play or pause the preview |
+| `x`, `Delete`, or `Backspace` | Return the selected shot to the unsorted images |
+| `u` or `Ctrl+Z` | Undo the last board edit |
+| `Enter` | Add the selected unsorted image, or open the selected EDL image full-screen |
+| `f` | Full-screen the preview |
+| `/` | Focus search (`Esc` returns to keyboard navigation) |
+| `?` | Show or hide this shortcut list |
+
+The preview slider seeks through the whole sequence. Drag an image onto another
+shot to insert it before or after that shot; drag a shot to reorder it. Board
+edits save automatically and `Save EDL` writes the sequence immediately.
+
 ### Pictogrep bridge
 
 Pictogrep is optional visual research and sketching support. From inside a

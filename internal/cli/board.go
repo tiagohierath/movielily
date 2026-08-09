@@ -630,6 +630,39 @@ select:disabled { color: var(--muted); background: var(--soft); }
   .shot .thumb { width: 130px; }
   .row-motion { grid-column: 3; grid-row: auto; }
 }
+
+/* Neutral palette borrowed from the Pictogrep storyboard. Layout stays intact. */
+:root { --bg:#f5f5f2; --paper:#fff; --fg:#171717; --muted:#666; --line:#c9c9c3; --soft:#eeeeea; --hi:#fff; --shade:#eeeeea; --well:#f5f5f2; --drop:#171717; --accent:#171717; }
+html, body, body { background:var(--bg); }
+button, input, select { background:var(--paper); border-color:var(--line); box-shadow:none; }
+button:hover, button.active { background:var(--soft); border-color:var(--line); color:var(--fg); }
+.topbar { background:var(--paper); border-bottom-color:var(--line); box-shadow:none; }
+.topbar { min-height:0; display:flex; gap:.55rem; padding:.55rem .75rem; align-items:center; }
+.counts { margin-right:auto; }
+#search { width:min(16rem, 28vw); min-width:8rem; }
+.transport { flex:0 0 auto; flex-wrap:nowrap; }
+.scene-filter, .audio-strip, #scene, #toUnsorted { display:none; }
+.unsorted, .sequence, .preview-pane { background:var(--bg); box-shadow:none; }
+.unsorted.drop-target { background:var(--soft); outline-color:var(--fg); }
+.preview-frame, .thumb, .unsorted-card, .unsorted-card img { background:var(--paper); border-color:var(--line); box-shadow:none; }
+.unsorted-card.selected { border-color:var(--fg); outline:1px solid var(--fg); outline-offset:1px; }
+.shot:hover, .shot.selected { background:var(--soft); }
+.shot.selected .thumb { border-color:var(--fg); outline-color:var(--fg); }
+.end-drop, .empty { background:var(--paper); border-color:var(--line); }
+.preview-scrub { width:100%; margin:.7rem 0 .1rem; accent-color:var(--fg); }
+.key-help { position:fixed; inset:0; z-index:30; display:grid; place-items:center; padding:1rem; background:rgba(245,245,242,.88); }
+.key-help[hidden] { display:none; }
+.key-help-card { position:relative; width:min(31rem, 100%); padding:1rem 1.15rem; border:1px solid var(--line); background:var(--paper); box-shadow:0 4px 14px rgba(0,0,0,.14); }
+.key-help-card strong { display:block; margin-bottom:.7rem; }
+.key-help-card dl { display:grid; grid-template-columns:9rem 1fr; gap:.35rem .8rem; margin:0; }
+.key-help-card dt { font-family:monospace; font-weight:700; }
+.key-help-card dd { margin:0; color:var(--muted); }
+.key-help-close { position:absolute; top:.45rem; right:.45rem; min-width:1.75rem; padding:.1rem .35rem; font-size:1.2rem; }
+@media (max-width:840px) {
+  .topbar { flex-wrap:wrap; }
+  #search { order:2; flex:1 1 100%; width:auto; }
+  .counts { margin-right:0; }
+}
 </style>
 </head>
 <body>
@@ -680,6 +713,7 @@ select:disabled { color: var(--muted); background: var(--soft); }
       <div>
         <div class="preview-meta" id="previewMeta"></div>
         <div class="preview-tools" id="previewTools"></div>
+        <input id="previewScrub" class="preview-scrub" type="range" min="0" max="0" step="0.01" value="0" aria-label="Preview timeline">
       </div>
     </div>
   </aside>
@@ -687,6 +721,27 @@ select:disabled { color: var(--muted); background: var(--soft); }
 <div id="lightbox" class="lightbox">
   <div class="lightbox-frame"><img id="lightboxImg" alt=""></div>
   <div class="lightbox-bar"><span id="lightboxMeta"></span><span>Esc / Enter returns - Left / Right cycles</span></div>
+</div>
+<div id="keyHelp" class="key-help" hidden>
+  <div class="key-help-card" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+    <button id="closeKeyHelp" class="key-help-close" aria-label="Close keyboard shortcuts">×</button>
+    <strong>Keyboard shortcuts</strong>
+    <dl>
+      <dt>Tab</dt><dd>switch between Images and EDL</dd>
+      <dt>h / l</dt><dd>left / right in the current pane</dd>
+      <dt>j / k</dt><dd>down / up (across image-grid rows)</dd>
+      <dt>J / K</dt><dd>move selected EDL shot down / up</dd>
+      <dt>U / I</dt><dd>shorten / lengthen selected EDL shot</dd>
+      <dt>gg / G</dt><dd>first / last item in the current pane</dd>
+      <dt>[ / ]</dt><dd>shorter / longer</dd>
+      <dt>Space</dt><dd>play / pause preview</dd>
+      <dt>Enter</dt><dd>add selected image, or open selected EDL shot</dd>
+      <dt>x</dt><dd>return selected EDL shot to Images</dd>
+      <dt>u / Ctrl+Z</dt><dd>undo</dd>
+      <dt>/</dt><dd>focus search</dd>
+      <dt>?</dt><dd>toggle this help</dd>
+    </dl>
+  </div>
 </div>
 <script>
 var state = null;
@@ -703,6 +758,10 @@ var previewFile = "";
 var previewToolsKey = "";
 var undoStack = [];
 var maxUndo = 80;
+var pendingG = false;
+var pendingGTimer = 0;
+var boardFocus = "sequence";
+var selectedFile = "";
 
 function qs(s) { return document.querySelector(s); }
 var iconPaths = {
@@ -1180,7 +1239,7 @@ function renderUnsorted() {
   var match = matchesText();
   (state.footage_images || []).filter(function(img) { return !img.used && match(img.file, ""); }).forEach(function(img) {
     var el = document.createElement("div");
-    el.className = "unsorted-card";
+    el.className = "unsorted-card" + (img.file === selectedFile ? " selected" : "");
     el.draggable = true;
     el.dataset.file = img.file;
     el.innerHTML = '<img src="' + img.media_url + '" loading="lazy" alt=""><div class="name">' + escapeHTML(img.file) + '</div>';
@@ -1191,6 +1250,11 @@ function renderUnsorted() {
         e.dataTransfer.effectAllowed = "copy";
         e.dataTransfer.setData("text/plain", img.file);
       }
+    });
+    el.addEventListener("click", function() {
+      boardFocus = "unsorted";
+      selectedFile = img.file;
+      renderUnsorted();
     });
     el.addEventListener("dblclick", function() { addImage(img.file, null, false); });
     list.appendChild(el);
@@ -1339,6 +1403,9 @@ function endDropNode(afterId) {
 function renderPreview() {
   var frame = qs("#previewFrame");
   var meta = qs("#previewMeta");
+  var scrub = qs("#previewScrub");
+  scrub.max = String(Math.max(0, state.total_seconds || 0));
+  scrub.value = String(Math.max(0, Math.min(state.total_seconds || 0, playTime)));
   var b = selectedBlock() || blockAt(playTime);
   if (!b) {
     previewFile = "";
@@ -1467,6 +1534,8 @@ function addImage(file, targetId, after) {
   if (idx < 0) blocks.push(b);
   else blocks.splice(after ? idx + 1 : idx, 0, b);
   selectedId = b.id;
+  selectedFile = "";
+  boardFocus = "sequence";
   recalc();
   render();
   saveSoon();
@@ -1484,8 +1553,62 @@ function moveBlock(fromId, toId, after) {
   render();
   saveSoon();
 }
+function moveSelected(dir) {
+  var ss = shots();
+  var idx = ss.findIndex(function(b) { return b.id === selectedId; });
+  var next = idx + dir;
+  if (idx < 0 || next < 0 || next >= ss.length) return;
+  moveBlock(selectedId, ss[next].id, dir > 0);
+  select(selectedId, false);
+}
+function unsortedFiles() {
+  var match = matchesText();
+  return (state.footage_images || []).filter(function(img) { return !img.used && match(img.file, ""); }).map(function(img) { return img.file; });
+}
+function unsortedColumns() {
+  var list = qs("#unsorted");
+  var cols = getComputedStyle(list).gridTemplateColumns.trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(1, cols || 1);
+}
+function moveUnsorted(delta) {
+  var files = unsortedFiles();
+  if (!files.length) return;
+  var idx = files.indexOf(selectedFile);
+  if (idx < 0) idx = 0;
+  else idx = Math.max(0, Math.min(files.length - 1, idx + delta));
+  selectedFile = files[idx];
+  boardFocus = "unsorted";
+  renderUnsorted();
+  var node = qs("#unsorted [data-file='" + CSS.escape(selectedFile) + "']");
+  if (node) node.scrollIntoView({block: "nearest", inline: "nearest"});
+}
+function toggleBoardFocus() {
+  if (boardFocus === "sequence") {
+    boardFocus = "unsorted";
+    if (!selectedFile) selectedFile = unsortedFiles()[0] || "";
+    renderUnsorted();
+  } else {
+    boardFocus = "sequence";
+    renderUnsorted();
+  }
+}
+function goUnsortedStart() {
+  var files = unsortedFiles();
+  if (!files.length) return;
+  selectedFile = files[0];
+  boardFocus = "unsorted";
+  renderUnsorted();
+}
+function goUnsortedEnd() {
+  var files = unsortedFiles();
+  if (!files.length) return;
+  selectedFile = files[files.length - 1];
+  boardFocus = "unsorted";
+  renderUnsorted();
+}
 function select(id, scroll) {
   selectedId = id;
+  boardFocus = "sequence";
   var b = selectedBlock();
   if (b) playTime = b.start || 0;
   var audio = qs("#audioPlayer");
@@ -1609,6 +1732,11 @@ function closeLightbox() {
   lightboxOpen = false;
   qs("#lightbox").classList.remove("open");
 }
+function toggleKeyHelp(force) {
+  var help = qs("#keyHelp");
+  var open = force === undefined ? help.hidden : Boolean(force);
+  help.hidden = !open;
+}
 function renderLightbox() {
   if (!lightboxOpen) return;
   var b = selectedBlock();
@@ -1623,6 +1751,12 @@ function escapeHTML(s) {
 }
 initButtonIcons();
 qs("#search").addEventListener("input", render);
+qs("#search").addEventListener("keydown", function(e) {
+  if (e.key === "Escape") {
+    e.currentTarget.blur();
+    e.preventDefault();
+  }
+});
 qs("#addImages").addEventListener("click", function() { qs("#filePick").click(); });
 qs("#audioSelect").addEventListener("change", loadAudio);
 qs("#audioStart").addEventListener("click", function() { seekAudio(-Infinity); });
@@ -1680,11 +1814,22 @@ qs("#next").addEventListener("click", function() { stepSelection(1); });
 qs("#end").addEventListener("click", goEnd);
 qs("#scene").addEventListener("click", addScene);
 qs("#previewFrame").addEventListener("click", togglePlay);
+qs("#previewScrub").addEventListener("input", function(e) {
+  pause();
+  playTime = Number(e.target.value) || 0;
+  var b = blockAt(playTime);
+  if (b) selectedId = b.id;
+  render();
+});
 qs("#export").addEventListener("click", async function() {
   if (await saveNow()) setStatus("EDL saved");
 });
 qs("#undo").addEventListener("click", undoLastEdit);
 qs("#toUnsorted").addEventListener("click", sendSelectedToUnsorted);
+qs("#closeKeyHelp").addEventListener("click", function() { toggleKeyHelp(false); });
+qs("#keyHelp").addEventListener("click", function(e) {
+  if (e.target === qs("#keyHelp")) toggleKeyHelp(false);
+});
 initPreviewWidth();
 bindPreviewSplitter();
 document.addEventListener("fullscreenchange", renderPreview);
@@ -1696,18 +1841,68 @@ window.addEventListener("keydown", function(e) {
   }
   var tag = document.activeElement && document.activeElement.tagName;
   if (tag === "INPUT" || tag === "SELECT") return;
+  if (!qs("#keyHelp").hidden) {
+    if (e.key === "Escape" || e.key === "?" || e.key === "Enter") toggleKeyHelp(false);
+    return;
+  }
   if (lightboxOpen && (e.key === "Escape" || e.key === "Enter")) { closeLightbox(); return; }
+  if (e.key === "/") {
+    e.preventDefault();
+    qs("#search").focus();
+    qs("#search").select();
+    return;
+  }
+  if (e.key === "Tab") {
+    e.preventDefault();
+    toggleBoardFocus();
+    return;
+  }
+  if (boardFocus === "unsorted") {
+    if (e.key === "h" || e.key === "ArrowLeft") moveUnsorted(-1);
+    else if (e.key === "l" || e.key === "ArrowRight") moveUnsorted(1);
+    else if (e.key === "j" || e.key === "ArrowDown") moveUnsorted(unsortedColumns());
+    else if (e.key === "k" || e.key === "ArrowUp") moveUnsorted(-unsortedColumns());
+    else if (e.key === "Enter") addImage(selectedFile, null, false);
+    else if (e.key === "G" || e.key === "End") goUnsortedEnd();
+    else if (e.key === "g") {
+      if (pendingG) {
+        clearTimeout(pendingGTimer);
+        pendingG = false;
+        goUnsortedStart();
+      } else {
+        pendingG = true;
+        pendingGTimer = setTimeout(function() { pendingG = false; }, 650);
+      }
+    }
+    return;
+  }
   if (e.key === " ") { e.preventDefault(); togglePlay(); }
+  else if (e.key === "?") toggleKeyHelp(true);
   else if (e.key === "Home") goStart();
-  else if (e.key === "End") goEnd();
-  else if (e.key === "ArrowRight" || e.key === "l") stepSelection(1);
-  else if (e.key === "ArrowLeft" || e.key === "h") stepSelection(-1);
+  else if (e.key === "End" || e.key === "G") goEnd();
+  else if (e.key === "ArrowDown" || e.key === "ArrowRight" || e.key === "j" || e.key === "l") stepSelection(1);
+  else if (e.key === "ArrowUp" || e.key === "ArrowLeft" || e.key === "k" || e.key === "h") stepSelection(-1);
+  else if (e.key === "J") moveSelected(1);
+  else if (e.key === "K") moveSelected(-1);
+  else if (e.key === "U") nudgeDuration(-0.1);
+  else if (e.key === "I") nudgeDuration(0.1);
   else if (e.key === "]") nudgeDuration(0.1);
   else if (e.key === "[") nudgeDuration(-0.1);
   else if (e.key === "f" || e.key === "F") fullscreenPreview();
   else if (e.key === "Enter") openLightbox();
   else if (e.key === "s" || e.key === "S") addScene();
-  else if (e.key === "Delete" || e.key === "Backspace") sendSelectedToUnsorted();
+  else if (e.key === "x" || e.key === "Delete" || e.key === "Backspace") sendSelectedToUnsorted();
+  else if (e.key === "u") undoLastEdit();
+  else if (e.key === "g") {
+    if (pendingG) {
+      clearTimeout(pendingGTimer);
+      pendingG = false;
+      goStart();
+    } else {
+      pendingG = true;
+      pendingGTimer = setTimeout(function() { pendingG = false; }, 650);
+    }
+  }
 });
 load().catch(function(err) {
   setStatus("Error");
