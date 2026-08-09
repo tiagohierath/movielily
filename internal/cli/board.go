@@ -24,6 +24,7 @@ func newBoardCmd() *cobra.Command {
 	var open bool
 	var seed bool
 	var frames int
+	var imagesDir string
 
 	cmd := &cobra.Command{
 		Use:   "board <sequence>",
@@ -31,6 +32,8 @@ func newBoardCmd() *cobra.Command {
 		Long: "board serves a local browser view over sequences/<name>.txt: add\n" +
 			"storyboard images from the project image folders, reorder shots, set\n" +
 			"durations and pan motion, then preview the image animatic in-browser.\n" +
+			"Use --images-dir to copy an external storyboard folder into this\n" +
+			"project's storyboards/inbox/ before opening it.\n" +
 			"The sequence file remains the canonical movie and the TUI can open it\n" +
 			"immediately.",
 		Args: cobra.ExactArgs(1),
@@ -41,6 +44,13 @@ func newBoardCmd() *cobra.Command {
 			}
 			name := strings.TrimSuffix(filepath.Base(args[0]), ".txt")
 			s := &boardServer{p: p, name: name, defaultFrames: frames}
+			if imagesDir != "" {
+				n, err := s.importImageDir(imagesDir)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("copied %d image(s) into storyboards/inbox/\n", n)
+			}
 			if seed {
 				n, err := s.importUnusedImages(frames)
 				if err != nil {
@@ -63,6 +73,7 @@ func newBoardCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&open, "open", false, "open the board in a browser")
 	cmd.Flags().BoolVar(&seed, "seed", false, "append unused footage images to the sequence before serving")
 	cmd.Flags().IntVar(&frames, "frames", 48, "default still duration in frames")
+	cmd.Flags().StringVar(&imagesDir, "images-dir", "", "copy images from this external folder into storyboards/inbox before serving")
 	return cmd
 }
 
@@ -350,6 +361,42 @@ func (s *boardServer) importUnusedImages(frames int) (int, error) {
 	return n, store.WriteLines(s.p.Sequence(s.name), lines)
 }
 
+// importImageDir copies external storyboard images into the project inbox. It
+// never moves or modifies the originals, so later exports remain self-contained.
+func (s *boardServer) importImageDir(src string) (int, error) {
+	src, err := filepath.Abs(src)
+	if err != nil {
+		return 0, err
+	}
+	st, err := os.Stat(src)
+	if err != nil {
+		return 0, err
+	}
+	if !st.IsDir() {
+		return 0, fmt.Errorf("images directory %q is not a folder", src)
+	}
+	dstDir := s.p.StoryboardInboxDir()
+	if err := os.MkdirAll(dstDir, 0o755); err != nil {
+		return 0, err
+	}
+	n := 0
+	err = filepath.WalkDir(src, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() || !isStoryboardImage(d.Name()) {
+			return nil
+		}
+		dst := filepath.Join(dstDir, collisionFreeName(dstDir, d.Name()))
+		if err := copyFile(path, dst); err != nil {
+			return err
+		}
+		n++
+		return nil
+	})
+	return n, err
+}
+
 func (s *boardServer) blocks(items []model.SequenceItem) []boardBlock {
 	blocks := make([]boardBlock, 0, len(items))
 	t := 0.0
@@ -632,7 +679,7 @@ select:disabled { color: var(--muted); background: var(--soft); }
 }
 
 /* Neutral palette borrowed from the Pictogrep storyboard. Layout stays intact. */
-:root { --bg:#f5f5f2; --paper:#fff; --fg:#171717; --muted:#666; --line:#c9c9c3; --soft:#eeeeea; --hi:#fff; --shade:#eeeeea; --well:#f5f5f2; --drop:#171717; --accent:#171717; }
+:root { --bg:#f5f5f2; --paper:#fff; --fg:#171717; --muted:#666; --line:#c9c9c3; --soft:#eeeeea; --hi:#fff; --shade:#eeeeea; --well:#f5f5f2; --drop:#171717; --accent:#171717; --unsorted-w:280px; }
 html, body, body { background:var(--bg); }
 button, input, select { background:var(--paper); border-color:var(--line); box-shadow:none; }
 button:hover, button.active { background:var(--soft); border-color:var(--line); color:var(--fg); }
@@ -642,7 +689,11 @@ button:hover, button.active { background:var(--soft); border-color:var(--line); 
 #search { width:min(16rem, 28vw); min-width:8rem; }
 .transport { flex:0 0 auto; flex-wrap:nowrap; }
 .scene-filter, .audio-strip, #scene, #toUnsorted { display:none; }
+.layout { grid-template-columns:var(--unsorted-w) 10px minmax(360px, 1fr) 10px var(--preview-w); }
 .unsorted, .sequence, .preview-pane { background:var(--bg); box-shadow:none; }
+.unsorted-list { grid-template-columns:1fr; }
+.unsorted-card { min-width:0; overflow:visible; }
+.unsorted-card img { height:auto; max-height:220px; aspect-ratio:auto; object-fit:contain; }
 .unsorted.drop-target { background:var(--soft); outline-color:var(--fg); }
 .preview-frame, .thumb, .unsorted-card, .unsorted-card img { background:var(--paper); border-color:var(--line); box-shadow:none; }
 .unsorted-card.selected { border-color:var(--fg); outline:1px solid var(--fg); outline-offset:1px; }
@@ -701,6 +752,7 @@ button:hover, button.active { background:var(--soft); border-color:var(--line); 
     <div class="pane-title">UNSORTED</div>
     <div id="unsorted" class="unsorted-list"></div>
   </aside>
+  <div class="splitter" id="unsortedSplitter" title="Drag to resize images"></div>
   <section class="sequence">
     <div class="pane-title">EDL</div>
     <div id="sequence"></div>
@@ -731,13 +783,12 @@ button:hover, button.active { background:var(--soft); border-color:var(--line); 
       <dt>h / l</dt><dd>left / right in the current pane</dd>
       <dt>j / k</dt><dd>down / up (across image-grid rows)</dd>
       <dt>J / K</dt><dd>move selected EDL shot down / up</dd>
-      <dt>U / I</dt><dd>shorten / lengthen selected EDL shot</dd>
+      <dt>U / I</dt><dd>shorten / lengthen selected EDL shot by 0.1s</dd>
       <dt>gg / G</dt><dd>first / last item in the current pane</dd>
-      <dt>[ / ]</dt><dd>shorter / longer</dd>
       <dt>Space</dt><dd>play / pause preview</dd>
       <dt>Enter</dt><dd>add selected image, or open selected EDL shot</dd>
       <dt>x</dt><dd>return selected EDL shot to Images</dd>
-      <dt>u / Ctrl+Z</dt><dd>undo</dd>
+      <dt>Ctrl+Z</dt><dd>undo</dd>
       <dt>/</dt><dd>focus search</dd>
       <dt>?</dt><dd>toggle this help</dd>
     </dl>
@@ -977,7 +1028,25 @@ function duplicateSelected() {
 function previewWidthBounds() {
   var layout = qs(".layout");
   var w = layout ? layout.clientWidth : window.innerWidth;
-  return {min: 260, max: Math.max(260, w - 170 - 10 - 360)};
+  return {min: 260, max: Math.max(260, w - unsortedWidth() - 20 - 360)};
+}
+function unsortedWidth() {
+  var value = getComputedStyle(document.documentElement).getPropertyValue("--unsorted-w");
+  return parseFloat(value) || 280;
+}
+function unsortedWidthBounds() {
+  var layout = qs(".layout");
+  var w = layout ? layout.clientWidth : window.innerWidth;
+  var preview = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--preview-w")) || 360;
+  return {min: 140, max: Math.max(140, w - preview - 20 - 360)};
+}
+function setUnsortedWidth(px, persist) {
+  var bounds = unsortedWidthBounds();
+  px = clamp(Math.round(Number(px) || 280), bounds.min, bounds.max);
+  document.documentElement.style.setProperty("--unsorted-w", px + "px");
+  if (persist) {
+    try { localStorage.setItem("milklily.unsortedWidth", String(px)); } catch (e) {}
+  }
 }
 function setPreviewWidth(px, persist) {
   var bounds = previewWidthBounds();
@@ -992,6 +1061,9 @@ function initPreviewWidth() {
   var saved = "";
   try { saved = localStorage.getItem("milklily.previewWidth") || ""; } catch (e) {}
   if (saved) setPreviewWidth(Number(saved), false);
+  var unsorted = "";
+  try { unsorted = localStorage.getItem("milklily.unsortedWidth") || ""; } catch (e) {}
+  if (unsorted) setUnsortedWidth(Number(unsorted), false);
 }
 function bindPreviewSplitter() {
   var splitter = qs("#splitter");
@@ -1019,6 +1091,30 @@ function bindPreviewSplitter() {
     var current = getComputedStyle(document.documentElement).getPropertyValue("--preview-w");
     setPreviewWidth(parseFloat(current) || 360, false);
   });
+}
+function bindUnsortedSplitter() {
+  var splitter = qs("#unsortedSplitter");
+  var layout = qs(".layout");
+  if (!splitter || !layout) return;
+  splitter.addEventListener("pointerdown", function(e) {
+    e.preventDefault();
+    document.body.classList.add("resizing");
+    splitter.setPointerCapture(e.pointerId);
+  });
+  splitter.addEventListener("pointermove", function(e) {
+    if (!document.body.classList.contains("resizing")) return;
+    var rect = layout.getBoundingClientRect();
+    setUnsortedWidth(e.clientX - rect.left, true);
+  });
+  function end(e) {
+    if (!document.body.classList.contains("resizing")) return;
+    document.body.classList.remove("resizing");
+    try { splitter.releasePointerCapture(e.pointerId); } catch (err) {}
+  }
+  splitter.addEventListener("pointerup", end);
+  splitter.addEventListener("pointercancel", end);
+  splitter.addEventListener("dblclick", function() { setUnsortedWidth(280, true); });
+  window.addEventListener("resize", function() { setUnsortedWidth(unsortedWidth(), false); });
 }
 function fullscreenPreview() {
   var frame = qs("#previewFrame");
@@ -1832,6 +1928,7 @@ qs("#keyHelp").addEventListener("click", function(e) {
 });
 initPreviewWidth();
 bindPreviewSplitter();
+bindUnsortedSplitter();
 document.addEventListener("fullscreenchange", renderPreview);
 window.addEventListener("keydown", function(e) {
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && String(e.key).toLowerCase() === "z") {
@@ -1884,15 +1981,12 @@ window.addEventListener("keydown", function(e) {
   else if (e.key === "ArrowUp" || e.key === "ArrowLeft" || e.key === "k" || e.key === "h") stepSelection(-1);
   else if (e.key === "J") moveSelected(1);
   else if (e.key === "K") moveSelected(-1);
-  else if (e.key === "U") nudgeDuration(-0.1);
-  else if (e.key === "I") nudgeDuration(0.1);
-  else if (e.key === "]") nudgeDuration(0.1);
-  else if (e.key === "[") nudgeDuration(-0.1);
+  else if (e.key === "u" || e.key === "U") nudgeDuration(-0.1);
+  else if (e.key === "i" || e.key === "I") nudgeDuration(0.1);
   else if (e.key === "f" || e.key === "F") fullscreenPreview();
   else if (e.key === "Enter") openLightbox();
   else if (e.key === "s" || e.key === "S") addScene();
   else if (e.key === "x" || e.key === "Delete" || e.key === "Backspace") sendSelectedToUnsorted();
-  else if (e.key === "u") undoLastEdit();
   else if (e.key === "g") {
     if (pendingG) {
       clearTimeout(pendingGTimer);

@@ -133,6 +133,8 @@ image's current start time.
 milklily init my-film --git
 cd my-film
 milklily board main --open
+# Copy a standalone storyboard folder into this project's inbox, then open it.
+milklily board main --images-dir ~/Pictures/storyboards --open
 ```
 
 `init` creates a folder meant to stay readable in any file manager:
@@ -193,6 +195,8 @@ simple vertical/horizontal pan, press play, then save. It writes the same
 
 Uploads from the browser land in `storyboards/inbox/`. The board scans
 `storyboards/`, `images/`, `refs/`, `fxs/` and legacy `footage/` recursively.
+`--images-dir` is the bridge for a folder outside the project: it copies its
+PNG, JPG, and WebP files into `storyboards/inbox/`; the originals stay untouched.
 
 #### Board keyboard shortcuts
 
@@ -207,10 +211,9 @@ shot. Press `?` in the board to see the same list.
 | `J` / `K` | Move the selected shot down / up in the sequence |
 | `U` / `I` | Shorten / lengthen the selected EDL shot by 0.1 seconds |
 | `gg` / `G` | Jump to the first / last item in the focused pane |
-| `[` / `]` | Shorten / lengthen the selected shot by 0.1 seconds |
 | `Space` | Play or pause the preview |
 | `x`, `Delete`, or `Backspace` | Return the selected shot to the unsorted images |
-| `u` or `Ctrl+Z` | Undo the last board edit |
+| `Ctrl+Z` | Undo the last board edit |
 | `Enter` | Add the selected unsorted image, or open the selected EDL image full-screen |
 | `f` | Full-screen the preview |
 | `/` | Focus search (`Esc` returns to keyboard navigation) |
